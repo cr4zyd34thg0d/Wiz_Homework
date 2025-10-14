@@ -1,0 +1,459 @@
+# Kubernetes Deployment Pipeline for K8s Vulnerable Database Project
+# Handles application deployment to EKS cluster
+
+name: 🚀 Kubernetes Deployment
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'k8s/**'
+      - 'docker/**'
+      - '.github/workflows/k8s-deploy.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'k8s/**'
+      - 'docker/**'
+      - '.github/workflows/k8s-deploy.yml'
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Deployment action'
+        required: true
+        default: 'deploy'
+        type: choice
+        options:
+          - deploy
+          - rollback
+          - destroy
+
+env:
+  AWS_REGION: 'us-west-2'
+  CLUSTER_NAME: 'k8s-vulnerable-db-dev'
+  KUBECTL_VERSION: 'v1.28.0'
+  HELM_VERSION: 'v3.13.0'
+
+jobs:
+  validate-manifests:
+    name: 🔍 Validate K8s Manifests
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🔧 Setup kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: ${{ env.KUBECTL_VERSION }}
+
+      - name: ✅ Validate Kubernetes Manifests
+        run: |
+          for file in k8s/*.yaml; do
+            echo "Validating $file"
+            kubectl apply --dry-run=client -f "$file"
+          done
+
+      - name: 🔍 Lint Kubernetes Manifests
+        uses: stackrox/kube-linter-action@v1.0.4
+        with:
+          directory: k8s/
+          format: sarif
+          output-file: kube-linter-results.sarif
+
+      - name: 📊 Upload Kube-linter Results
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: kube-linter-results.sarif
+
+  security-scan:
+    name: 🔒 Container Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🔍 Run Trivy Vulnerability Scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: 'k8s/'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: 📊 Upload Trivy Results
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      - name: 🛡️ Scan Kubernetes Manifests with Snyk
+        uses: snyk/actions/iac@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          file: k8s/
+          args: --severity-threshold=high
+
+  build-and-push:
+    name: 🏗️ Build & Push Images
+    runs-on: ubuntu-latest
+    needs: [validate-manifests, security-scan]
+    if: github.event_name == 'push' || github.event.inputs.action == 'deploy'
+    
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+      image-digest: ${{ steps.build.outputs.digest }}
+    
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🔑 Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: 🏷️ Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: 🏗️ Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 📝 Extract Metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.login-ecr.outputs.registry }}/k8s-vulnerable-db-app
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: 🏗️ Build and Push Docker Image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: docker/app/
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
+
+      - name: 🔍 Scan Image with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.meta.outputs.tags }}
+          format: 'sarif'
+          output: 'image-trivy-results.sarif'
+
+      - name: 📊 Upload Image Scan Results
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: 'image-trivy-results.sarif'
+
+  deploy-to-k8s:
+    name: 🚀 Deploy to Kubernetes
+    runs-on: ubuntu-latest
+    needs: [validate-manifests, build-and-push]
+    if: |
+      (github.ref == 'refs/heads/main' && github.event_name == 'push') ||
+      github.event.inputs.action == 'deploy'
+    environment: 
+      name: ${{ github.ref == 'refs/heads/main' && 'production' || 'development' }}
+      url: ${{ steps.get-url.outputs.app-url }}
+    
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🔑 Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: 🔧 Setup kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: ${{ env.KUBECTL_VERSION }}
+
+      - name: 🔧 Setup Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: ⚙️ Update kubeconfig
+        run: |
+          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.CLUSTER_NAME }}
+
+      - name: 🔍 Verify Cluster Connection
+        run: |
+          kubectl cluster-info
+          kubectl get nodes
+
+      - name: 📝 Update Image Tags
+        run: |
+          # Update deployment with new image tag
+          sed -i "s|image: .*|image: ${{ needs.build-and-push.outputs.image-tag }}|g" k8s/deployment.yaml
+
+      - name: 🚀 Deploy to Kubernetes
+        run: |
+          # Apply namespace first
+          kubectl apply -f k8s/namespace.yaml
+          
+          # Apply ConfigMaps and Secrets
+          kubectl apply -f k8s/configmap.yaml
+          
+          # Apply other resources
+          kubectl apply -f k8s/
+          
+          # Wait for deployment to be ready
+          kubectl rollout status deployment/db-connector -n vulnerable-db --timeout=300s
+
+      - name: 🔍 Verify Deployment
+        run: |
+          kubectl get pods -n vulnerable-db
+          kubectl get services -n vulnerable-db
+          kubectl get ingress -n vulnerable-db
+
+      - name: 🌐 Get Application URL
+        id: get-url
+        run: |
+          # Wait for load balancer to be ready
+          sleep 60
+          
+          # Get the load balancer URL
+          LB_URL=$(kubectl get ingress db-connector-ingress -n vulnerable-db -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "pending")
+          
+          if [ "$LB_URL" != "pending" ] && [ "$LB_URL" != "" ]; then
+            echo "app-url=http://$LB_URL" >> $GITHUB_OUTPUT
+            echo "Application URL: http://$LB_URL"
+          else
+            echo "app-url=pending" >> $GITHUB_OUTPUT
+            echo "Load balancer URL is still pending"
+          fi
+
+      - name: 🧪 Run Health Checks
+        run: |
+          # Check if pods are running
+          kubectl wait --for=condition=ready pod -l app=db-connector -n vulnerable-db --timeout=300s
+          
+          # Check service endpoints
+          kubectl get endpoints -n vulnerable-db
+          
+          # Test internal connectivity
+          kubectl run test-pod --image=curlimages/curl:latest --rm -i --restart=Never -n vulnerable-db -- \
+            curl -f http://db-connector-service/health || echo "Health check failed"
+
+      - name: 💬 Comment Deployment Status
+        if: github.event_name == 'push'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const appUrl = '${{ steps.get-url.outputs.app-url }}';
+            const urlText = appUrl !== 'pending' ? `[${appUrl}](${appUrl})` : 'Load balancer provisioning...';
+            
+            const output = `### 🚀 Kubernetes Deployment Successful!
+            
+            **Application URL:** ${urlText}
+            **Namespace:** \`vulnerable-db\`
+            **Image:** \`${{ needs.build-and-push.outputs.image-tag }}\`
+            **Digest:** \`${{ needs.build-and-push.outputs.image-digest }}\`
+            
+            **Deployed Resources:**
+            - ✅ Namespace: \`vulnerable-db\`
+            - ✅ Deployment: \`db-connector\`
+            - ✅ Service: \`db-connector-service\`
+            - ✅ Ingress: \`db-connector-ingress\`
+            - ✅ ConfigMap: \`app-config\`
+            
+            **Next Steps:**
+            1. Verify application is accessible at the URL above
+            2. Run connectivity tests: \`make test-connectivity\`
+            3. Check monitoring dashboards
+            
+            *Deployed by: @${{ github.actor }} via ${{ github.workflow }}*`;
+            
+            await github.rest.repos.createCommitComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              commit_sha: context.sha,
+              body: output
+            });
+
+  rollback:
+    name: 🔄 Rollback Deployment
+    runs-on: ubuntu-latest
+    if: github.event.inputs.action == 'rollback'
+    environment: 
+      name: rollback-confirmation
+    
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🔑 Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: 🔧 Setup kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: ${{ env.KUBECTL_VERSION }}
+
+      - name: ⚙️ Update kubeconfig
+        run: |
+          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.CLUSTER_NAME }}
+
+      - name: 🔄 Rollback Deployment
+        run: |
+          kubectl rollout undo deployment/db-connector -n vulnerable-db
+          kubectl rollout status deployment/db-connector -n vulnerable-db --timeout=300s
+
+      - name: 💬 Comment Rollback Status
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const output = `### 🔄 Deployment Rollback Completed
+            
+            The deployment has been successfully rolled back to the previous version.
+            
+            **Rollback Details:**
+            - Deployment: \`db-connector\`
+            - Namespace: \`vulnerable-db\`
+            - Status: ✅ Completed
+            
+            *Rolled back by: @${{ github.actor }} via manual trigger*`;
+            
+            await github.rest.repos.createCommitComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              commit_sha: context.sha,
+              body: output
+            });
+
+  destroy:
+    name: 💥 Destroy Applications
+    runs-on: ubuntu-latest
+    if: github.event.inputs.action == 'destroy'
+    environment: 
+      name: destruction
+    
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🔑 Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: 🔧 Setup kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: ${{ env.KUBECTL_VERSION }}
+
+      - name: ⚙️ Update kubeconfig
+        run: |
+          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.CLUSTER_NAME }}
+
+      - name: 💥 Delete Applications
+        run: |
+          kubectl delete -f k8s/ --ignore-not-found=true
+          kubectl delete namespace vulnerable-db --ignore-not-found=true
+
+      - name: 💬 Comment Destruction Status
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const output = `### 💥 Applications Destroyed
+            
+            All Kubernetes applications have been successfully removed.
+            
+            **Destroyed Resources:**
+            - 🗑️ Namespace: \`vulnerable-db\`
+            - 🗑️ All deployments, services, and ingresses
+            
+            *Destroyed by: @${{ github.actor }} via manual trigger*`;
+            
+            await github.rest.repos.createCommitComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              commit_sha: context.sha,
+              body: output
+            });
+
+  integration-tests:
+    name: 🧪 Integration Tests
+    runs-on: ubuntu-latest
+    needs: deploy-to-k8s
+    if: |
+      (github.ref == 'refs/heads/main' && github.event_name == 'push') ||
+      github.event.inputs.action == 'deploy'
+    
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🔑 Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: 🔧 Setup kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: ${{ env.KUBECTL_VERSION }}
+
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: 📦 Install Dependencies
+        run: |
+          pip install -r tests/requirements.txt
+
+      - name: ⚙️ Update kubeconfig
+        run: |
+          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.CLUSTER_NAME }}
+
+      - name: 🧪 Run Integration Tests
+        run: |
+          python -m pytest tests/integration-tests.py -v --tb=short
+
+      - name: 🔗 Run Connectivity Tests
+        run: |
+          python -m pytest tests/connectivity-tests.py -v --tb=short
+
+      - name: 📊 Generate Test Report
+        if: always()
+        run: |
+          python -m pytest tests/ --html=test-report.html --self-contained-html
+
+      - name: 📤 Upload Test Report
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: test-report
+          path: test-report.html
+          retention-days: 30

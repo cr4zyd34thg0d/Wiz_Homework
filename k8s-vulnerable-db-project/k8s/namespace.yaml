@@ -1,0 +1,12 @@
+# Namespace for vulnerable database project
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vulnerable-db
+  labels:
+    name: vulnerable-db
+    project: k8s-vulnerable-db
+    environment: dev
+    managed-by: terraform
+  annotations:
+    description: "Namespace for K8s vulnerable database demo project"

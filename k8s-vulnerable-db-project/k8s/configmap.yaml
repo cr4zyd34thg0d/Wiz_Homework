@@ -1,0 +1,109 @@
+# ConfigMap for application configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: vulnerable-db
+  labels:
+    app: db-connector
+    project: k8s-vulnerable-db
+data:
+  # Database connection settings
+  DB_HOST: "10.0.1.100"  # Will be updated by Terraform output
+  DB_PORT: "3306"
+  DB_NAME: "dvwa"
+  DB_USER: "dvwa_user"
+  
+  # Application settings
+  APP_ENV: "development"
+  LOG_LEVEL: "info"
+  ENABLE_METRICS: "true"
+  METRICS_PORT: "9090"
+  
+  # Security settings
+  ENABLE_TLS: "false"  # Set to true in production
+  SESSION_TIMEOUT: "3600"
+  
+  # Monitoring settings
+  PROMETHEUS_ENABLED: "true"
+  HEALTH_CHECK_PATH: "/health"
+  READY_CHECK_PATH: "/ready"
+  
+  # Application configuration
+  nginx.conf: |
+    events {
+        worker_connections 1024;
+    }
+    
+    http {
+        include       /etc/nginx/mime.types;
+        default_type  application/octet-stream;
+        
+        log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                        '$status $body_bytes_sent "$http_referer" '
+                        '"$http_user_agent" "$http_x_forwarded_for"';
+        
+        access_log /var/log/nginx/access.log main;
+        error_log /var/log/nginx/error.log warn;
+        
+        sendfile on;
+        tcp_nopush on;
+        tcp_nodelay on;
+        keepalive_timeout 65;
+        types_hash_max_size 2048;
+        
+        server {
+            listen 80;
+            server_name _;
+            
+            # Health check endpoint
+            location /health {
+                access_log off;
+                return 200 "healthy\n";
+                add_header Content-Type text/plain;
+            }
+            
+            # Ready check endpoint
+            location /ready {
+                access_log off;
+                return 200 "ready\n";
+                add_header Content-Type text/plain;
+            }
+            
+            # Metrics endpoint
+            location /metrics {
+                access_log off;
+                return 200 "# HELP nginx_up Nginx is up\n# TYPE nginx_up gauge\nnginx_up 1\n";
+                add_header Content-Type text/plain;
+            }
+            
+            # Main application
+            location / {
+                root /usr/share/nginx/html;
+                index index.html;
+                try_files $uri $uri/ =404;
+            }
+            
+            # Database connection test
+            location /db-test {
+                access_log off;
+                return 200 "Database connection test - check logs for details\n";
+                add_header Content-Type text/plain;
+            }
+        }
+    }
+
+---
+# Secret for database password
+apiVersion: v1
+kind: Secret
+metadata:
+  name: db-secret
+  namespace: vulnerable-db
+  labels:
+    app: db-connector
+    project: k8s-vulnerable-db
+type: Opaque
+data:
+  # Base64 encoded password: dvwa_password
+  DB_PASSWORD: ZHZ3YV9wYXNzd29yZA==

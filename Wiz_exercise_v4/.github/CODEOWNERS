@@ -1,0 +1,25 @@
+# Code Owners for Wiz Exercise v4
+# These users will be automatically requested for review when PRs are opened
+
+# Global owners - require review for all changes
+* @cr4zyd34thg0d
+
+# Infrastructure code - critical security components
+/terraform/ @cr4zyd34thg0d
+/.github/workflows/ @cr4zyd34thg0d
+
+# Application code - contains intentional vulnerabilities
+/app/ @cr4zyd34thg0d
+/k8s/ @cr4zyd34thg0d
+
+# Security documentation and scripts
+/.github/SECURITY.md @cr4zyd34thg0d
+/.github/dependabot.yml @cr4zyd34thg0d
+/scripts/ @cr4zyd34thg0d
+
+# Specification and design documents
+/.kiro/specs/ @cr4zyd34thg0d
+
+# Documentation
+/README.md @cr4zyd34thg0d
+/**/README.md @cr4zyd34thg0d
