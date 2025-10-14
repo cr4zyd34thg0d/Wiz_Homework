@@ -11,6 +11,10 @@ terraform {
       source  = "hashicorp/tls"
       version = "~> 4.0"
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.0"
+    }
   }
 }
 
@@ -36,13 +40,14 @@ resource "aws_internet_gateway" "main" {
   tags = { Name = "${local.name_prefix}-igw" }
 }
 
-# Public subnet for MongoDB VM
+# Public subnets for ALB (need 2 AZs)
 resource "aws_subnet" "public" {
+  count                   = 2
   vpc_id                  = aws_vpc.main.id
-  cidr_block              = "10.0.1.0/24"
-  availability_zone       = data.aws_availability_zones.available.names[0]
+  cidr_block              = "10.0.${count.index + 1}.0/24"
+  availability_zone       = data.aws_availability_zones.available.names[count.index]
   map_public_ip_on_launch = true
-  tags = { Name = "${local.name_prefix}-public" }
+  tags = { Name = "${local.name_prefix}-public-${count.index + 1}" }
 }
 
 # Private subnets for EKS (REQUIRED)
@@ -62,7 +67,7 @@ resource "aws_eip" "nat" {
 
 resource "aws_nat_gateway" "main" {
   allocation_id = aws_eip.nat.id
-  subnet_id     = aws_subnet.public.id
+  subnet_id     = aws_subnet.public[0].id
   tags = { Name = "${local.name_prefix}-nat" }
   depends_on = [aws_internet_gateway.main]
 }
@@ -78,7 +83,8 @@ resource "aws_route_table" "public" {
 }
 
 resource "aws_route_table_association" "public" {
-  subnet_id      = aws_subnet.public.id
+  count          = 2
+  subnet_id      = aws_subnet.public[count.index].id
   route_table_id = aws_route_table.public.id
 }
 
@@ -223,7 +229,7 @@ resource "aws_instance" "mongodb" {
   instance_type          = "t3.micro"
   key_name               = var.key_pair_name
   vpc_security_group_ids = [aws_security_group.mongodb_vm.id]
-  subnet_id              = aws_subnet.public.id
+  subnet_id              = aws_subnet.public[0].id
   iam_instance_profile   = aws_iam_instance_profile.mongodb_vm.name
 
   user_data = base64encode(<<-EOF
@@ -234,20 +240,83 @@ wget -qO - https://www.mongodb.org/static/pgp/server-4.4.asc | apt-key add -
 echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu focal/mongodb-org/4.4 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-4.4.list
 apt-get update
 apt-get install -y mongodb-org=4.4.18
+
+# Configure MongoDB with authentication
+cat > /etc/mongod.conf << 'MONGOCONF'
+storage:
+  dbPath: /var/lib/mongodb
+  journal:
+    enabled: true
+
+systemLog:
+  destination: file
+  logAppend: true
+  path: /var/log/mongodb/mongod.log
+
+net:
+  port: 27017
+  bindIp: 0.0.0.0
+
+processManagement:
+  fork: true
+  pidFilePath: /var/run/mongodb/mongod.pid
+
+security:
+  authorization: enabled
+MONGOCONF
+
 systemctl start mongod
 systemctl enable mongod
+
+# Wait for MongoDB to start
+sleep 10
+
+# Create admin user and todoapp database
+mongo << 'MONGOJS'
+use admin
+db.createUser({
+  user: "admin",
+  pwd: "password123",
+  roles: [ { role: "userAdminAnyDatabase", db: "admin" }, "readWriteAnyDatabase" ]
+})
+
+use todoapp
+db.createUser({
+  user: "todoapp",
+  pwd: "todopass",
+  roles: [ { role: "readWrite", db: "todoapp" } ]
+})
+
+db.todos.insertMany([
+  {"task": "Review security policies", "completed": false, "user": "admin"},
+  {"task": "Update database passwords", "completed": false, "user": "admin"},
+  {"task": "Complete Wiz demo", "completed": true, "user": "devon"}
+])
+
+db.users.insertMany([
+  {"username": "admin", "email": "admin@company.com", "role": "admin"},
+  {"username": "devon", "email": "devon@company.com", "role": "user"}
+])
+MONGOJS
+
 # Install AWS CLI
 apt-get install -y awscli
-# Daily backup script
+
+# Daily backup script with authentication
 cat > /opt/mongodb-backup.sh << 'SCRIPT'
 #!/bin/bash
 DATE=$(date +%Y-%m-%d)
-mongodump --db todoapp --out /tmp/backup-$DATE
+mongodump --host localhost --port 27017 --username admin --password password123 --authenticationDatabase admin --db todoapp --out /tmp/backup-$DATE
 tar -czf /tmp/backup-$DATE.tar.gz -C /tmp backup-$DATE
 aws s3 cp /tmp/backup-$DATE.tar.gz s3://${aws_s3_bucket.backup.bucket}/mongodb-backups/
 rm -rf /tmp/backup-$DATE*
 SCRIPT
 chmod +x /opt/mongodb-backup.sh
+
+# Run initial backup
+/opt/mongodb-backup.sh
+
+# Schedule daily backups
 echo "0 2 * * * root /opt/mongodb-backup.sh" >> /etc/crontab
 EOF
   )
@@ -313,6 +382,16 @@ resource "aws_eks_access_entry" "root_user" {
   type             = "STANDARD"
 }
 
+# ECR Repository for container images
+resource "aws_ecr_repository" "app" {
+  name                 = "${local.name_prefix}-app"
+  image_tag_mutability = "MUTABLE"
+  
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+}
+
 # Get current AWS account ID
 data "aws_caller_identity" "current" {}
 
@@ -362,6 +441,52 @@ resource "aws_eks_node_group" "main" {
     aws_iam_role_policy_attachment.eks_cni_policy,
     aws_iam_role_policy_attachment.eks_container_registry_policy,
   ]
+}
+
+# Random string for unique bucket names
+resource "random_string" "bucket_suffix" {
+  length  = 8
+  special = false
+  upper   = false
+}
+
+# S3 Bucket for MongoDB backups (VULNERABLE - Public read access)
+resource "aws_s3_bucket" "backup" {
+  bucket = "${local.name_prefix}-backup-${random_string.bucket_suffix.result}"
+}
+
+resource "aws_s3_bucket_public_access_block" "backup" {
+  bucket = aws_s3_bucket.backup.id
+
+  block_public_acls       = false
+  block_public_policy     = false
+  ignore_public_acls      = false
+  restrict_public_buckets = false
+}
+
+resource "aws_s3_bucket_policy" "backup_public_read" {
+  bucket = aws_s3_bucket.backup.id
+  depends_on = [aws_s3_bucket_public_access_block.backup]
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "PublicReadGetObject"
+        Effect    = "Allow"
+        Principal = "*"
+        Action    = "s3:GetObject"
+        Resource  = "${aws_s3_bucket.backup.arn}/*"
+      },
+      {
+        Sid       = "PublicListBucket"
+        Effect    = "Allow"
+        Principal = "*"
+        Action    = "s3:ListBucket"
+        Resource  = aws_s3_bucket.backup.arn
+      }
+    ]
+  })
 }
 
 # CloudTrail (REQUIRED - Control plane audit logging)
@@ -428,36 +553,19 @@ resource "aws_iam_role_policy" "config_s3" {
   role = aws_iam_role.config.id
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "s3:GetBucketAcl",
-          "s3:PutObject", 
-          "s3:GetObject",
-          "s3:ListBucket"
-        ]
-        Resource = [
-          aws_s3_bucket.config.arn,
-          "${aws_s3_bucket.config.arn}/*"
-        ]
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "s3:GetBucketAcl",
-          "s3:GetBucketPolicy",
-          "s3:GetBucketPolicyStatus",
-          "s3:GetBucketPublicAccessBlock",
-          "s3:GetBucketLocation",
-          "s3:GetBucketVersioning",
-          "s3:GetBucketEncryption",
-          "s3:ListBucket",
-          "s3:ListAllMyBuckets"
-        ]
-        Resource = "*"
-      }
-    ]
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "s3:GetBucketAcl",
+        "s3:PutObject", 
+        "s3:GetObject",
+        "s3:ListBucket"
+      ]
+      Resource = [
+        aws_s3_bucket.config.arn,
+        "${aws_s3_bucket.config.arn}/*"
+      ]
+    }]
   })
 }
 
@@ -489,6 +597,147 @@ resource "aws_config_config_rule" "s3_bucket_public_read_prohibited" {
     source_identifier = "S3_BUCKET_PUBLIC_READ_PROHIBITED"
   }
   depends_on = [aws_config_configuration_recorder.main]
+}
+
+# FedRAMP High Part 1 Conformance Pack (COMPREHENSIVE COMPLIANCE MONITORING)
+resource "aws_config_conformance_pack" "fedramp_high_part1" {
+  name = "${local.name_prefix}-fedramp-high-part1"
+  
+  template_body = jsonencode({
+    Parameters = {
+      AccessKeysRotatedParamMaxAccessKeyAge = {
+        Default = "90"
+        Type    = "String"
+      }
+      IamPasswordPolicyParamMaxPasswordAge = {
+        Default = "90"
+        Type    = "String"
+      }
+      IamPasswordPolicyParamMinimumPasswordLength = {
+        Default = "14"
+        Type    = "String"
+      }
+      IamPasswordPolicyParamPasswordReusePrevention = {
+        Default = "24"
+        Type    = "String"
+      }
+      IamPasswordPolicyParamRequireLowercaseCharacters = {
+        Default = "true"
+        Type    = "String"
+      }
+      IamPasswordPolicyParamRequireNumbers = {
+        Default = "true"
+        Type    = "String"
+      }
+      IamPasswordPolicyParamRequireSymbols = {
+        Default = "true"
+        Type    = "String"
+      }
+      IamPasswordPolicyParamRequireUppercaseCharacters = {
+        Default = "true"
+        Type    = "String"
+      }
+    }
+    Resources = {
+      AccessKeysRotated = {
+        Properties = {
+          ConfigRuleName = "access-keys-rotated"
+          Source = {
+            Owner             = "AWS"
+            SourceIdentifier  = "ACCESS_KEYS_ROTATED"
+          }
+          InputParameters = jsonencode({
+            maxAccessKeyAge = { Ref = "AccessKeysRotatedParamMaxAccessKeyAge" }
+          })
+        }
+        Type = "AWS::Config::ConfigRule"
+      }
+      CloudtrailEnabled = {
+        Properties = {
+          ConfigRuleName = "cloudtrail-enabled"
+          Source = {
+            Owner            = "AWS"
+            SourceIdentifier = "CLOUD_TRAIL_ENABLED"
+          }
+        }
+        Type = "AWS::Config::ConfigRule"
+      }
+      IamPasswordPolicy = {
+        Properties = {
+          ConfigRuleName = "iam-password-policy"
+          Source = {
+            Owner            = "AWS"
+            SourceIdentifier = "IAM_PASSWORD_POLICY"
+          }
+          InputParameters = jsonencode({
+            RequireUppercaseCharacters = { Ref = "IamPasswordPolicyParamRequireUppercaseCharacters" }
+            RequireLowercaseCharacters = { Ref = "IamPasswordPolicyParamRequireLowercaseCharacters" }
+            RequireSymbols            = { Ref = "IamPasswordPolicyParamRequireSymbols" }
+            RequireNumbers            = { Ref = "IamPasswordPolicyParamRequireNumbers" }
+            MinimumPasswordLength     = { Ref = "IamPasswordPolicyParamMinimumPasswordLength" }
+            PasswordReusePrevention   = { Ref = "IamPasswordPolicyParamPasswordReusePrevention" }
+            MaxPasswordAge           = { Ref = "IamPasswordPolicyParamMaxPasswordAge" }
+          })
+        }
+        Type = "AWS::Config::ConfigRule"
+      }
+      IamRootAccessKeyCheck = {
+        Properties = {
+          ConfigRuleName = "iam-root-access-key-check"
+          Source = {
+            Owner            = "AWS"
+            SourceIdentifier = "IAM_ROOT_ACCESS_KEY_CHECK"
+          }
+        }
+        Type = "AWS::Config::ConfigRule"
+      }
+      MfaEnabledForIamConsoleAccess = {
+        Properties = {
+          ConfigRuleName = "mfa-enabled-for-iam-console-access"
+          Source = {
+            Owner            = "AWS"
+            SourceIdentifier = "MFA_ENABLED_FOR_IAM_CONSOLE_ACCESS"
+          }
+        }
+        Type = "AWS::Config::ConfigRule"
+      }
+      S3BucketPublicReadProhibited = {
+        Properties = {
+          ConfigRuleName = "s3-bucket-public-read-prohibited"
+          Source = {
+            Owner            = "AWS"
+            SourceIdentifier = "S3_BUCKET_PUBLIC_READ_PROHIBITED"
+          }
+        }
+        Type = "AWS::Config::ConfigRule"
+      }
+      S3BucketPublicWriteProhibited = {
+        Properties = {
+          ConfigRuleName = "s3-bucket-public-write-prohibited"
+          Source = {
+            Owner            = "AWS"
+            SourceIdentifier = "S3_BUCKET_PUBLIC_WRITE_PROHIBITED"
+          }
+        }
+        Type = "AWS::Config::ConfigRule"
+      }
+      S3BucketSslRequestsOnly = {
+        Properties = {
+          ConfigRuleName = "s3-bucket-ssl-requests-only"
+          Source = {
+            Owner            = "AWS"
+            SourceIdentifier = "S3_BUCKET_SSL_REQUESTS_ONLY"
+          }
+        }
+        Type = "AWS::Config::ConfigRule"
+      }
+    }
+  })
+  
+  depends_on = [
+    aws_config_configuration_recorder.main,
+    aws_config_delivery_channel.main
+  ]
 }
 
 # Create SSH key pair for MongoDB VM (Demo purposes)

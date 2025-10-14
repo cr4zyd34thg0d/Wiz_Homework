@@ -1,0 +1,13 @@
+{
+    "accessEntry": {
+        "clusterName": "wiz-exercise-dev",
+        "principalArn": "arn:aws:iam::822153807950:root",
+        "kubernetesGroups": [],
+        "accessEntryArn": "arn:aws:eks:us-east-1:822153807950:access-entry/wiz-exercise-dev/root/822153807950//26ccf229-5551-27de-c44c-9093a54dbc1b",
+        "createdAt": "2025-10-14T14:04:07.002000-06:00",
+        "modifiedAt": "2025-10-14T14:04:07.002000-06:00",
+        "tags": {},
+        "username": "arn:aws:iam::822153807950:root",
+        "type": "STANDARD"
+    }
+}

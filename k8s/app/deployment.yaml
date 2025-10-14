@@ -35,17 +35,17 @@ spec:
       # INTENTIONAL VULNERABILITY: Use the service account with cluster-admin privileges
       serviceAccountName: wiz-todo-app-sa
       
-      # Security context (some security, but still vulnerable due to RBAC)
+      # Full admin access - no security restrictions for demo
       securityContext:
-        runAsNonRoot: true
-        runAsUser: 1001
-        runAsGroup: 1001
-        fsGroup: 1001
+        runAsUser: 0
+        runAsGroup: 0
+        fsGroup: 0
       
       containers:
       - name: wiz-todo-app
-        image: wiz-todo-app:latest
-        imagePullPolicy: IfNotPresent
+        image: PLACEHOLDER_IMAGE_URI
+        imagePullPolicy: Always
+        workingDir: /app
         
         ports:
         - name: http
@@ -58,8 +58,14 @@ spec:
           value: "production"
         - name: PORT
           value: "3000"
-        - name: MONGODB_URI
-          value: "mongodb://mongodb-vm-private-ip:27017/todoapp"
+        - name: MONGODB_HOST
+          value: "MONGODB_VM_IP_PLACEHOLDER"
+        - name: MONGODB_PORT
+          value: "27017"
+        - name: MONGODB_USER
+          value: "todoapp"
+        - name: MONGODB_PASS
+          value: "todopass"
         - name: MONGODB_DATABASE
           value: "todoapp"
         - name: APP_NAME

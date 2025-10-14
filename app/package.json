@@ -1,7 +1,7 @@
 {
   "name": "wiz-security-demo",
   "version": "1.0.0",
-  "description": "Simple demo app for Wiz security exercise - adapted from Express.js tutorials",
+  "description": "Simple demo app for Wiz security exercise with Trivy container scanning",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"

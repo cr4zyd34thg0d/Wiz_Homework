@@ -35,6 +35,24 @@ jobs:
         with:
           working_directory: terraform
       
+      - name: Container Security Scan
+        continue-on-error: true
+        run: |
+          echo "🐳 Building and scanning container for vulnerabilities..."
+          cd app
+          docker build -t wiz-todo-app:security-scan .
+          
+          # Install Trivy
+          sudo apt-get update
+          sudo apt-get install wget apt-transport-https gnupg lsb-release
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+          echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update
+          sudo apt-get install trivy
+          
+          # Scan the image
+          trivy image --severity HIGH,CRITICAL wiz-todo-app:security-scan
+      
       - name: Terraform Init
         working-directory: terraform
         run: |

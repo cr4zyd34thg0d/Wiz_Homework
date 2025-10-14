@@ -1,13 +1,25 @@
-# Simple Dockerfile for Wiz Security Demo
-# INTENTIONALLY VULNERABLE: Uses outdated Node.js version with known CVEs
-# Based on standard Node.js Docker practices
+# Wiz Security Demo - Intentionally Vulnerable Container
+# This Dockerfile demonstrates common container security issues that tools like Wiz detect
+# Built for educational purposes to show real-world vulnerabilities
 
 FROM node:16.14.0-alpine3.15
 
-# VULNERABILITY NOTES:
-# - Node.js 16.14.0 has known security vulnerabilities (CVE-2022-0778, CVE-2022-21824)
-# - Alpine 3.15 has outdated packages with potential security issues
-# - This creates a vulnerable container for security scanning demonstration
+# 🚨 INTENTIONAL SECURITY VULNERABILITIES FOR DEMONSTRATION:
+# 
+# 1. OUTDATED BASE IMAGE:
+#    - Node.js 16.14.0 (released Jan 2022, now 2+ years old)
+#    - Known CVEs: CVE-2022-0778 (OpenSSL DoS), CVE-2022-21824 (Node.js prototype pollution)
+#    - Alpine 3.15 (released Nov 2021, outdated packages)
+#
+# 2. SECURITY IMPACT:
+#    - Remote code execution potential
+#    - Denial of service vulnerabilities  
+#    - Package vulnerabilities in base OS
+#
+# 3. DETECTION:
+#    - Wiz would immediately flag these CVEs
+#    - Container image scanning would show high/critical findings
+#    - Compliance frameworks would mark as non-compliant
 
 # Set working directory
 WORKDIR /app
@@ -19,13 +31,17 @@ RUN npm install
 # Copy application code
 COPY . .
 
-# CRITICAL: Verify the wizexercise.txt file exists and has correct content
-RUN echo "Validating wizexercise.txt file..." && \
+# 📋 REQUIREMENT VALIDATION: wizexercise.txt file
+# The Wiz exercise requires a file named "wizexercise.txt" containing the candidate's name
+# This build-time validation ensures the requirement is met before container deployment
+RUN echo "🔍 Validating required wizexercise.txt file..." && \
     test -f wizexercise.txt && \
     echo "✅ wizexercise.txt file exists" && \
+    echo "📄 File contents:" && \
     cat wizexercise.txt && \
     test "$(cat wizexercise.txt)" = "Devon Diffie" && \
-    echo "✅ wizexercise.txt content is correct"
+    echo "✅ wizexercise.txt content validation passed" && \
+    echo "🎯 File will be accessible at /app/wizexercise.txt in running container"
 
 # Expose port
 EXPOSE 3000
