@@ -1,6 +1,3 @@
-# Candidate preparation materials - DO NOT UPLOAD TO GITHUB
-candidate_prep/
-
 # Terraform state files
 *.tfstate
 *.tfstate.*
