@@ -179,13 +179,7 @@ The deployment includes several intentional vulnerabilities:
 - VM accessible via SSH from internet
 - Excessive IAM permissions allowing resource creation
 
-## Cost & Cleanup
-
-### Expected Daily Cost: ~$3.50
-- EKS Cluster: $2.40/day (required for Kubernetes)
-- MongoDB VM: $0.50/day (t3.micro)
-- EKS Node: $0.50/day (t3.small)
-- S3/CloudTrail: $0.10/day
+## Cleanup
 
 ### Clean Up (Important!)
 ```bash
