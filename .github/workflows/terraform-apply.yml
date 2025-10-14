@@ -20,4 +20,4 @@ jobs:
         working-directory: terraform
         run: |
           terraform init
-          terraform apply -auto-approve -var="region=${{ secrets.AWS_REGION }}" -var="mongo_ami=${{ secrets.MONGO_AMI }}"
+          terraform apply -auto-approve -var="aws_region=${{ secrets.AWS_REGION }}"
