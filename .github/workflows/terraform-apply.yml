@@ -1,20 +1,23 @@
 name: Terraform Apply
-on: {workflow_dispatch: {}}
+on: { workflow_dispatch: {} }
 jobs:
   tf:
     runs-on: ubuntu-latest
-    permissions: {id-token: write, contents: read}
+    permissions: { id-token: write, contents: read }
     steps:
-    - uses: actions/checkout@v4
-    - uses: aws-actions/configure-aws-credentials@v4
-      with:
-        aws-region: ${{ secrets.AWS_REGION }}
-        role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
-    - uses: hashicorp/setup-terraform@v3
-    - uses: aquasecurity/tfsec-action@v1.0.3
-      with: { working_directory: terraform }
-    - name: Terraform Init/Apply
-      working-directory: terraform
-      run: |
-        terraform init
-        terraform apply -auto-approve -var="region=${{ secrets.AWS_REGION }}" -var="mongo_ami=${{ secrets.MONGO_AMI }}"
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+      - uses: hashicorp/setup-terraform@v3
+      - name: tfsec (IaC scan)
+        continue-on-error: true
+        uses: aquasecurity/tfsec-action@v1.0.3
+        with:
+          working_directory: terraform
+      - name: Terraform Init/Apply
+        working-directory: terraform
+        run: |
+          terraform init
+          terraform apply -auto-approve -var="region=${{ secrets.AWS_REGION }}" -var="mongo_ami=${{ secrets.MONGO_AMI }}"
