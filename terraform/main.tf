@@ -297,8 +297,24 @@ resource "aws_eks_cluster" "main" {
     security_group_ids      = [aws_security_group.eks_cluster.id]
   }
 
+  # Enable cluster access for root user
+  access_config {
+    authentication_mode = "API_AND_CONFIG_MAP"
+  }
+
   depends_on = [aws_iam_role_policy_attachment.eks_cluster_policy]
 }
+
+# Add root user access to EKS cluster
+resource "aws_eks_access_entry" "root_user" {
+  cluster_name      = aws_eks_cluster.main.name
+  principal_arn     = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+  kubernetes_groups = ["system:masters"]
+  type             = "STANDARD"
+}
+
+# Get current AWS account ID
+data "aws_caller_identity" "current" {}
 
 # EKS Node Group
 resource "aws_iam_role" "eks_nodes" {
