@@ -443,51 +443,7 @@ resource "aws_eks_node_group" "main" {
   ]
 }
 
-# Random string for unique bucket names
-resource "random_string" "bucket_suffix" {
-  length  = 8
-  special = false
-  upper   = false
-}
 
-# S3 Bucket for MongoDB backups (VULNERABLE - Public read access)
-resource "aws_s3_bucket" "backup" {
-  bucket = "${local.name_prefix}-backup-${random_string.bucket_suffix.result}"
-}
-
-resource "aws_s3_bucket_public_access_block" "backup" {
-  bucket = aws_s3_bucket.backup.id
-
-  block_public_acls       = false
-  block_public_policy     = false
-  ignore_public_acls      = false
-  restrict_public_buckets = false
-}
-
-resource "aws_s3_bucket_policy" "backup_public_read" {
-  bucket = aws_s3_bucket.backup.id
-  depends_on = [aws_s3_bucket_public_access_block.backup]
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid       = "PublicReadGetObject"
-        Effect    = "Allow"
-        Principal = "*"
-        Action    = "s3:GetObject"
-        Resource  = "${aws_s3_bucket.backup.arn}/*"
-      },
-      {
-        Sid       = "PublicListBucket"
-        Effect    = "Allow"
-        Principal = "*"
-        Action    = "s3:ListBucket"
-        Resource  = aws_s3_bucket.backup.arn
-      }
-    ]
-  })
-}
 
 # CloudTrail (REQUIRED - Control plane audit logging)
 resource "aws_s3_bucket" "cloudtrail" {
@@ -599,145 +555,102 @@ resource "aws_config_config_rule" "s3_bucket_public_read_prohibited" {
   depends_on = [aws_config_configuration_recorder.main]
 }
 
-# FedRAMP High Part 1 Conformance Pack (COMPREHENSIVE COMPLIANCE MONITORING)
-resource "aws_config_conformance_pack" "fedramp_high_part1" {
-  name = "${local.name_prefix}-fedramp-high-part1"
-  
-  template_body = jsonencode({
-    Parameters = {
-      AccessKeysRotatedParamMaxAccessKeyAge = {
-        Default = "90"
-        Type    = "String"
-      }
-      IamPasswordPolicyParamMaxPasswordAge = {
-        Default = "90"
-        Type    = "String"
-      }
-      IamPasswordPolicyParamMinimumPasswordLength = {
-        Default = "14"
-        Type    = "String"
-      }
-      IamPasswordPolicyParamPasswordReusePrevention = {
-        Default = "24"
-        Type    = "String"
-      }
-      IamPasswordPolicyParamRequireLowercaseCharacters = {
-        Default = "true"
-        Type    = "String"
-      }
-      IamPasswordPolicyParamRequireNumbers = {
-        Default = "true"
-        Type    = "String"
-      }
-      IamPasswordPolicyParamRequireSymbols = {
-        Default = "true"
-        Type    = "String"
-      }
-      IamPasswordPolicyParamRequireUppercaseCharacters = {
-        Default = "true"
-        Type    = "String"
-      }
-    }
-    Resources = {
-      AccessKeysRotated = {
-        Properties = {
-          ConfigRuleName = "access-keys-rotated"
-          Source = {
-            Owner             = "AWS"
-            SourceIdentifier  = "ACCESS_KEYS_ROTATED"
-          }
-          InputParameters = jsonencode({
-            maxAccessKeyAge = { Ref = "AccessKeysRotatedParamMaxAccessKeyAge" }
-          })
-        }
-        Type = "AWS::Config::ConfigRule"
-      }
-      CloudtrailEnabled = {
-        Properties = {
-          ConfigRuleName = "cloudtrail-enabled"
-          Source = {
-            Owner            = "AWS"
-            SourceIdentifier = "CLOUD_TRAIL_ENABLED"
-          }
-        }
-        Type = "AWS::Config::ConfigRule"
-      }
-      IamPasswordPolicy = {
-        Properties = {
-          ConfigRuleName = "iam-password-policy"
-          Source = {
-            Owner            = "AWS"
-            SourceIdentifier = "IAM_PASSWORD_POLICY"
-          }
-          InputParameters = jsonencode({
-            RequireUppercaseCharacters = { Ref = "IamPasswordPolicyParamRequireUppercaseCharacters" }
-            RequireLowercaseCharacters = { Ref = "IamPasswordPolicyParamRequireLowercaseCharacters" }
-            RequireSymbols            = { Ref = "IamPasswordPolicyParamRequireSymbols" }
-            RequireNumbers            = { Ref = "IamPasswordPolicyParamRequireNumbers" }
-            MinimumPasswordLength     = { Ref = "IamPasswordPolicyParamMinimumPasswordLength" }
-            PasswordReusePrevention   = { Ref = "IamPasswordPolicyParamPasswordReusePrevention" }
-            MaxPasswordAge           = { Ref = "IamPasswordPolicyParamMaxPasswordAge" }
-          })
-        }
-        Type = "AWS::Config::ConfigRule"
-      }
-      IamRootAccessKeyCheck = {
-        Properties = {
-          ConfigRuleName = "iam-root-access-key-check"
-          Source = {
-            Owner            = "AWS"
-            SourceIdentifier = "IAM_ROOT_ACCESS_KEY_CHECK"
-          }
-        }
-        Type = "AWS::Config::ConfigRule"
-      }
-      MfaEnabledForIamConsoleAccess = {
-        Properties = {
-          ConfigRuleName = "mfa-enabled-for-iam-console-access"
-          Source = {
-            Owner            = "AWS"
-            SourceIdentifier = "MFA_ENABLED_FOR_IAM_CONSOLE_ACCESS"
-          }
-        }
-        Type = "AWS::Config::ConfigRule"
-      }
-      S3BucketPublicReadProhibited = {
-        Properties = {
-          ConfigRuleName = "s3-bucket-public-read-prohibited"
-          Source = {
-            Owner            = "AWS"
-            SourceIdentifier = "S3_BUCKET_PUBLIC_READ_PROHIBITED"
-          }
-        }
-        Type = "AWS::Config::ConfigRule"
-      }
-      S3BucketPublicWriteProhibited = {
-        Properties = {
-          ConfigRuleName = "s3-bucket-public-write-prohibited"
-          Source = {
-            Owner            = "AWS"
-            SourceIdentifier = "S3_BUCKET_PUBLIC_WRITE_PROHIBITED"
-          }
-        }
-        Type = "AWS::Config::ConfigRule"
-      }
-      S3BucketSslRequestsOnly = {
-        Properties = {
-          ConfigRuleName = "s3-bucket-ssl-requests-only"
-          Source = {
-            Owner            = "AWS"
-            SourceIdentifier = "S3_BUCKET_SSL_REQUESTS_ONLY"
-          }
-        }
-        Type = "AWS::Config::ConfigRule"
-      }
-    }
-  })
-  
-  depends_on = [
-    aws_config_configuration_recorder.main,
-    aws_config_delivery_channel.main
-  ]
+# Additional Config rules for compliance monitoring
+resource "aws_config_config_rule" "s3_bucket_ssl_requests_only" {
+  name = "${local.name_prefix}-s3-ssl-requests-only"
+  source {
+    owner             = "AWS"
+    source_identifier = "S3_BUCKET_SSL_REQUESTS_ONLY"
+  }
+  depends_on = [aws_config_configuration_recorder.main]
+}
+
+resource "aws_config_config_rule" "cloudtrail_enabled" {
+  name = "${local.name_prefix}-cloudtrail-enabled"
+  source {
+    owner             = "AWS"
+    source_identifier = "CLOUD_TRAIL_ENABLED"
+  }
+  depends_on = [aws_config_configuration_recorder.main]
+}
+
+# Application Load Balancer (ALB) for Kubernetes app
+resource "aws_lb" "app" {
+  name               = "${local.name_prefix}-alb"
+  internal           = false
+  load_balancer_type = "application"
+  security_groups    = [aws_security_group.alb.id]
+  subnets            = aws_subnet.public[*].id
+
+  enable_deletion_protection = false
+
+  tags = {
+    Name = "${local.name_prefix}-alb"
+    Project = "wiz-exercise-v4"
+  }
+}
+
+# Security group for ALB
+resource "aws_security_group" "alb" {
+  name        = "${local.name_prefix}-alb-sg"
+  description = "Security group for Application Load Balancer"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    description = "HTTP"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "${local.name_prefix}-alb-sg"
+  }
+}
+
+# Target group for Kubernetes pods
+resource "aws_lb_target_group" "app" {
+  name     = "${local.name_prefix}-tg"
+  port     = 3000
+  protocol = "HTTP"
+  vpc_id   = aws_vpc.main.id
+  target_type = "ip"
+
+  health_check {
+    enabled             = true
+    healthy_threshold   = 2
+    interval            = 30
+    matcher             = "200"
+    path                = "/health"
+    port                = "traffic-port"
+    protocol            = "HTTP"
+    timeout             = 5
+    unhealthy_threshold = 3
+  }
+
+  tags = {
+    Name = "${local.name_prefix}-tg"
+  }
+}
+
+# ALB Listener
+resource "aws_lb_listener" "app" {
+  load_balancer_arn = aws_lb.app.arn
+  port              = "80"
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.app.arn
+  }
 }
 
 # Create SSH key pair for MongoDB VM (Demo purposes)
@@ -777,4 +690,14 @@ output "ssh_private_key" {
   description = "Private key for SSH access to MongoDB VM"
   value       = tls_private_key.main.private_key_pem
   sensitive   = true
+}
+
+output "alb_dns_name" {
+  description = "DNS name of the Application Load Balancer"
+  value       = aws_lb.app.dns_name
+}
+
+output "alb_target_group_arn" {
+  description = "ARN of the ALB target group for pod registration"
+  value       = aws_lb_target_group.app.arn
 }

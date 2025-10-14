@@ -147,28 +147,75 @@ As a security professional, I've implemented these common misconfigurations:
 - **Automated Scanning**: Security checks integrated into deployment pipeline
 - **Infrastructure as Code**: All security controls defined and versioned in code
 
-## 🔧 Manual MongoDB VM Creation
+## 🚀 Complete Deployment Guide
 
-If Terraform fails to create the MongoDB VM, you can create it manually for the demo:
+### **Prerequisites:**
+1. **AWS CLI configured** with appropriate permissions
+2. **kubectl installed** and configured
+3. **Terraform installed** (v1.12+ recommended)
+4. **Helm installed** (for Kubernetes package management)
 
-### Linux/macOS:
+### **Step-by-Step Deployment:**
+
+#### **1. Deploy Infrastructure (Terraform)**
 ```bash
-# Make script executable and run
+cd terraform
+terraform init
+terraform apply -var="aws_region=us-east-1"
+```
+
+#### **2. Configure Kubernetes Access**
+```bash
+aws eks update-kubeconfig --region us-east-1 --name wiz-exercise-dev
+```
+
+#### **3. Deploy Application**
+```bash
+# Apply Kubernetes manifests
+kubectl apply -f k8s/app/
+
+# Create LoadBalancer service for external access
+kubectl create service loadbalancer wiz-todo-app --tcp=80:3000
+```
+
+#### **4. Configure LoadBalancer Networking**
+```bash
+# Get ELB name
+ELB_NAME=$(kubectl get service wiz-todo-app -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' | cut -d'-' -f1-4)
+
+# Configure health check
+aws elb configure-health-check \
+  --load-balancer-name $ELB_NAME \
+  --health-check Target=HTTP:$(kubectl get service wiz-todo-app -o jsonpath='{.spec.ports[0].nodePort}')/health,Interval=10,Timeout=5,UnhealthyThreshold=3,HealthyThreshold=2
+
+# Ensure ELB covers both AZs (add us-east-1b subnet if needed)
+SUBNET_1B=$(aws ec2 describe-subnets --filters "Name=availability-zone,Values=us-east-1b" "Name=vpc-id,Values=$(aws eks describe-cluster --name wiz-exercise-dev --query 'cluster.resourcesVpcConfig.vpcId' --output text)" "Name=map-public-ip-on-launch,Values=true" --query 'Subnets[0].SubnetId' --output text)
+aws elb attach-load-balancer-to-subnets --load-balancer-name $ELB_NAME --subnets $SUBNET_1B
+```
+
+#### **5. Verify Deployment**
+```bash
+# Run comprehensive test
+./scripts/test-deployment.sh
+
+# Test application endpoints
+ELB_DNS=$(kubectl get service wiz-todo-app -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+curl "http://$ELB_DNS/health"
+curl "http://$ELB_DNS/api/info"
+```
+
+## 🔧 Manual MongoDB VM Creation (If Needed)
+
+If Terraform fails to create the MongoDB VM, you can create it manually:
+
+```bash
+# Linux/macOS/WSL
 chmod +x scripts/create-mongodb-vm.sh
 ./scripts/create-mongodb-vm.sh
-```
 
-### Windows PowerShell:
-```powershell
-# Run PowerShell script
+# Windows PowerShell
 .\scripts\create-mongodb-vm.ps1
 ```
-
-This creates an intentionally vulnerable MongoDB instance with:
-- No authentication required
-- Bound to all interfaces (0.0.0.0)
-- Sample data with PII and credentials
-- SSH access from anywhere
 
 ## 🔍 Container Security Scanning
 

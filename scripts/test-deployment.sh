@@ -85,19 +85,19 @@ test_kubernetes() {
 test_application() {
     log "${BLUE}Testing application...${NC}"
     
-    # Get ALB DNS
-    ALB_DNS=$(kubectl get ingress wiz-todo-app-ingress -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null)
-    if [ -n "$ALB_DNS" ] && [ "$ALB_DNS" != "null" ]; then
-        log "${GREEN}✓ ALB DNS: $ALB_DNS${NC}"
+    # Get LoadBalancer DNS (ELB)
+    ELB_DNS=$(kubectl get service wiz-todo-app -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null)
+    if [ -n "$ELB_DNS" ] && [ "$ELB_DNS" != "null" ]; then
+        log "${GREEN}✓ LoadBalancer DNS: $ELB_DNS${NC}"
         
         # Test health endpoint
-        if curl -f -s "http://$ALB_DNS/health" > /dev/null 2>&1; then
+        if curl -f -s "http://$ELB_DNS/health" > /dev/null 2>&1; then
             log "${GREEN}✓ Application health check passed${NC}"
         else
             log "${YELLOW}⚠ Application health check failed (may still be starting)${NC}"
         fi
     else
-        log "${YELLOW}⚠ ALB DNS not available yet${NC}"
+        log "${YELLOW}⚠ LoadBalancer DNS not available yet${NC}"
     fi
     
     # Test wizexercise.txt file
@@ -171,7 +171,7 @@ main() {
     # Show demo commands
     echo ""
     log "${BLUE}Demo commands:${NC}"
-    echo "Application URL: http://$ALB_DNS"
+    echo "Application URL: http://$ELB_DNS"
     echo "Test RBAC vulnerability: kubectl auth can-i --list --as=system:serviceaccount:default:wiz-todo-app-sa"
     echo "Show public S3 bucket: aws s3 ls s3://$BACKUP_BUCKET/"
     echo "SSH to MongoDB: ssh -i wiz-exercise-keypair.pem ubuntu@$MONGODB_IP"
