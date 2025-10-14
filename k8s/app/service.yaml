@@ -1,0 +1,45 @@
+# Kubernetes Service for Wiz Todo App
+# Creates internal cluster communication service
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: wiz-todo-app-service
+  namespace: default
+  labels:
+    app: wiz-todo-app
+    component: service
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    service.beta.kubernetes.io/aws-load-balancer-backend-protocol: "http"
+spec:
+  type: ClusterIP
+  selector:
+    app: wiz-todo-app
+  ports:
+  - name: http
+    port: 80
+    targetPort: http
+    protocol: TCP
+  sessionAffinity: None
+
+---
+# Headless Service for StatefulSet-like behavior (if needed)
+apiVersion: v1
+kind: Service
+metadata:
+  name: wiz-todo-app-headless
+  namespace: default
+  labels:
+    app: wiz-todo-app
+    component: headless-service
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: wiz-todo-app
+  ports:
+  - name: http
+    port: 3000
+    targetPort: http
+    protocol: TCP
