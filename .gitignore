@@ -30,5 +30,25 @@ logs/
 tmp/
 temp/
 
-#dont upload AWS CLI files
+# AWS CLI files (don't upload)
 aws/
+
+# Interview preparation files (internal use only - keep private)
+INTERVIEW_GUIDE.md
+INTERVIEW_EXPLANATION.md
+POST_DEPLOYMENT_CHECKS.md
+DEPLOYMENT_CHECKLIST.md
+FINAL_PACKAGE_SUMMARY.md
+INTERVIEW_EXPLANATION.md
+cleanup-repo.sh
+verify-package.sh
+
+# Any accidentally created command files
+*subnet*
+*ubnet*
+*sociate*
+*elbv2*
+*describe*
+*restart*
+*ting*
+*sudo*
