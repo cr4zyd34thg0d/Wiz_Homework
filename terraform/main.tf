@@ -412,14 +412,36 @@ resource "aws_iam_role_policy" "config_s3" {
   role = aws_iam_role.config.id
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Action = ["s3:GetBucketAcl", "s3:PutObject", "s3:GetObject", "s3:ListBucket"]
-      Resource = [
-        aws_s3_bucket.config.arn,
-        "${aws_s3_bucket.config.arn}/*"
-      ]
-    }]
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetBucketAcl",
+          "s3:PutObject", 
+          "s3:GetObject",
+          "s3:ListBucket"
+        ]
+        Resource = [
+          aws_s3_bucket.config.arn,
+          "${aws_s3_bucket.config.arn}/*"
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetBucketAcl",
+          "s3:GetBucketPolicy",
+          "s3:GetBucketPolicyStatus",
+          "s3:GetBucketPublicAccessBlock",
+          "s3:GetBucketLocation",
+          "s3:GetBucketVersioning",
+          "s3:GetBucketEncryption",
+          "s3:ListBucket",
+          "s3:ListAllMyBuckets"
+        ]
+        Resource = "*"
+      }
+    ]
   })
 }
 
@@ -430,6 +452,12 @@ resource "aws_config_configuration_recorder" "main" {
     all_supported = true
     include_global_resource_types = true
   }
+}
+
+resource "aws_config_configuration_recorder_status" "main" {
+  name       = aws_config_configuration_recorder.main.name
+  is_enabled = true
+  depends_on = [aws_config_delivery_channel.main]
 }
 
 resource "aws_config_delivery_channel" "main" {
