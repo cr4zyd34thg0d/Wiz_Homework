@@ -1,0 +1,64 @@
+name: Terraform Destroy (Cleanup)
+on: 
+  workflow_dispatch:
+    inputs:
+      confirm_destroy:
+        description: 'Type "DESTROY" to confirm resource cleanup'
+        required: true
+        default: ''
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    permissions: 
+      id-token: write
+      contents: read
+    
+    steps:
+      - name: Validate Confirmation
+        run: |
+          if [ "${{ github.event.inputs.confirm_destroy }}" != "DESTROY" ]; then
+            echo "❌ Confirmation failed. You must type 'DESTROY' to proceed."
+            exit 1
+          fi
+          echo "✅ Confirmation received. Proceeding with cleanup..."
+
+      - uses: actions/checkout@v4
+      
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+      
+      - uses: hashicorp/setup-terraform@v3
+      
+      - name: Terraform Init
+        working-directory: terraform
+        run: terraform init
+      
+      - name: Terraform Destroy
+        working-directory: terraform
+        run: |
+          echo "🗑️ Destroying all resources..."
+          terraform destroy -auto-approve -var="aws_region=${{ secrets.AWS_REGION }}"
+          echo "✅ Cleanup completed!"
+      
+      - name: Verify Cleanup
+        run: |
+          echo "🔍 Verifying resource cleanup..."
+          # Check for any remaining resources with our project tag
+          INSTANCES=$(aws ec2 describe-instances --filters "Name=tag:Project,Values=wiz-exercise-v4" --query 'Reservations[*].Instances[?State.Name!=`terminated`]' --output text)
+          if [ -n "$INSTANCES" ]; then
+            echo "⚠️ Warning: Some EC2 instances may still exist"
+          else
+            echo "✅ No EC2 instances found"
+          fi
+          
+          # Check S3 buckets
+          BUCKETS=$(aws s3api list-buckets --query "Buckets[?contains(Name, 'wiz-exercise-dev')].Name" --output text)
+          if [ -n "$BUCKETS" ]; then
+            echo "⚠️ Warning: Some S3 buckets may still exist: $BUCKETS"
+            echo "💡 You may need to empty and delete them manually"
+          else
+            echo "✅ No project S3 buckets found"
+          fi

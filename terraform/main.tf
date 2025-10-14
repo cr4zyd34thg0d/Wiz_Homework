@@ -7,6 +7,10 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
+    tls = {
+      source  = "hashicorp/tls"
+      version = "~> 4.0"
+    }
   }
 }
 
@@ -400,7 +404,7 @@ resource "aws_iam_role" "config" {
 
 resource "aws_iam_role_policy_attachment" "config" {
   role       = aws_iam_role.config.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/ConfigRole"
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWS_ConfigRole"
 }
 
 resource "aws_iam_role_policy" "config_s3" {
@@ -443,6 +447,17 @@ resource "aws_config_config_rule" "s3_bucket_public_read_prohibited" {
   depends_on = [aws_config_configuration_recorder.main]
 }
 
+# Create SSH key pair for MongoDB VM (Demo purposes)
+resource "tls_private_key" "main" {
+  algorithm = "RSA"
+  rsa_bits  = 2048
+}
+
+resource "aws_key_pair" "main" {
+  key_name   = var.key_pair_name
+  public_key = tls_private_key.main.public_key_openssh
+}
+
 # Get availability zones
 data "aws_availability_zones" "available" {
   state = "available"
@@ -463,4 +478,10 @@ output "eks_cluster_endpoint" {
 
 output "eks_cluster_name" {
   value = aws_eks_cluster.main.name
+}
+
+output "ssh_private_key" {
+  description = "Private key for SSH access to MongoDB VM"
+  value       = tls_private_key.main.private_key_pem
+  sensitive   = true
 }

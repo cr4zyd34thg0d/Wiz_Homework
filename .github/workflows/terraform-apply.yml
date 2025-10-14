@@ -1,23 +1,72 @@
 name: Terraform Apply
-on: { workflow_dispatch: {} }
+on: 
+  workflow_dispatch:
+    inputs:
+      auto_approve:
+        description: 'Auto-approve terraform apply (true/false)'
+        required: false
+        default: 'false'
+
 jobs:
-  tf:
+  terraform:
     runs-on: ubuntu-latest
-    permissions: { id-token: write, contents: read }
+    permissions: 
+      id-token: write
+      contents: read
+    
     steps:
       - uses: actions/checkout@v4
+      
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ${{ secrets.AWS_REGION }}
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+      
       - uses: hashicorp/setup-terraform@v3
-      - name: tfsec (IaC scan)
+      
+      - name: Terraform Format Check
+        working-directory: terraform
+        run: terraform fmt -check
+        continue-on-error: true
+      
+      - name: TfSec Security Scan
         continue-on-error: true
         uses: aquasecurity/tfsec-action@v1.0.3
         with:
           working_directory: terraform
-      - name: Terraform Init/Apply
+      
+      - name: Terraform Init
         working-directory: terraform
         run: |
+          echo "🚀 Initializing Terraform..."
           terraform init
-          terraform apply -auto-approve -var="aws_region=${{ secrets.AWS_REGION }}"
+      
+      - name: Terraform Validate
+        working-directory: terraform
+        run: |
+          echo "✅ Validating Terraform configuration..."
+          terraform validate
+      
+      - name: Terraform Plan
+        working-directory: terraform
+        run: |
+          echo "📋 Creating Terraform plan..."
+          terraform plan -var="aws_region=${{ secrets.AWS_REGION }}" -out=tfplan
+      
+      - name: Terraform Apply
+        working-directory: terraform
+        run: |
+          if [ "${{ github.event.inputs.auto_approve }}" = "true" ]; then
+            echo "🚀 Applying Terraform changes (auto-approved)..."
+            terraform apply -auto-approve tfplan
+          else
+            echo "📋 Plan created successfully. Run with auto_approve=true to apply."
+            echo "💡 Or run 'terraform apply tfplan' locally after downloading the plan."
+          fi
+      
+      - name: Terraform Outputs
+        if: github.event.inputs.auto_approve == 'true'
+        working-directory: terraform
+        run: |
+          echo "📊 Terraform Outputs:"
+          terraform output
