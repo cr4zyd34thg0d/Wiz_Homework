@@ -174,13 +174,17 @@ jobs:
           # Create working copies of manifests
           cp -r k8s /tmp/k8s-deploy
 
-          # Update ConfigMap with MongoDB IP
-          echo "Updating ConfigMap with MongoDB IP: $MONGO_IP"
-          sed -i "s/MONGO_PRIVATE_IP/$MONGO_IP/g" /tmp/k8s-deploy/03-configmap.yaml
+          # Force the correct MongoDB IP
+          echo "Using MongoDB IP: 10.0.1.87 (hardcoded for reliability)"
+          sed -i "s/MONGO_PRIVATE_IP/10.0.1.87/g" /tmp/k8s-deploy/03-configmap.yaml
           
           # Verify the replacement worked
           echo "ConfigMap after replacement:"
           grep MONGO_URL /tmp/k8s-deploy/03-configmap.yaml
+          
+          # Also force update any existing ConfigMap in cluster
+          echo "Deleting existing ConfigMap to force refresh..."
+          kubectl delete configmap wiz-todo-config -n wiz --ignore-not-found=true
 
           # Update deployment with image URI
           echo "Updating deployment with image: $IMAGE_URI"
@@ -195,6 +199,10 @@ jobs:
           kubectl apply -f /tmp/k8s-deploy/06-ingress.yaml
 
           echo "Kubernetes manifests applied"
+          
+          # Force restart deployment to pick up new ConfigMap
+          echo "Restarting deployment to pick up new ConfigMap..."
+          kubectl rollout restart deployment/wiz-todo-app -n wiz
 
       - name: Wait for Deployment
         run: |
