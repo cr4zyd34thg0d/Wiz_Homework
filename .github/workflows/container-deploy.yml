@@ -74,7 +74,7 @@ jobs:
 
       - name: Build Container Image
         run: |
-          echo "🐳 Building container image..."
+          echo "Building container image..."
           cd app
 
           # Build image with build args
@@ -84,7 +84,7 @@ jobs:
             -t wiz-todo-app:latest \
             .
 
-          echo "✅ Container built successfully"
+          echo "Container built successfully"
 
       - name: Container Security Scan (Post-build)
         uses: aquasecurity/trivy-action@master
@@ -111,7 +111,7 @@ jobs:
 
       - name: Push to ECR
         run: |
-          echo "📤 Pushing container to ECR..."
+          echo "Pushing container to ECR..."
 
           # Create ECR repository if needed
           aws ecr describe-repositories --repository-names wiz-exercise-dev-app 2>/dev/null || \
@@ -133,20 +133,20 @@ jobs:
           docker push "$IMAGE_URI_LATEST"
 
           echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
-          echo "✅ Container pushed to ECR: $IMAGE_URI"
+          echo "Container pushed to ECR: $IMAGE_URI"
 
       - name: Configure kubectl
         run: |
-          echo "🔧 Configuring kubectl for cluster: $CLUSTER_NAME"
+          echo "Configuring kubectl for cluster: $CLUSTER_NAME"
           aws eks update-kubeconfig --region $AWS_REGION --name $CLUSTER_NAME
 
           # Test connection
           kubectl get nodes
-          echo "✅ kubectl configured successfully"
+          echo "kubectl configured successfully"
 
       - name: Deploy to Kubernetes
         run: |
-          echo "🚀 Deploying application to Kubernetes..."
+          echo "Deploying application to Kubernetes..."
 
           # Create working copies of manifests
           cp -r k8s /tmp/k8s-deploy
@@ -165,84 +165,84 @@ jobs:
           kubectl apply -f /tmp/k8s-deploy/05-service.yaml
           kubectl apply -f /tmp/k8s-deploy/06-ingress.yaml
 
-          echo "✅ Kubernetes manifests applied"
+          echo "Kubernetes manifests applied"
 
       - name: Wait for Deployment
         run: |
-          echo "⏳ Waiting for deployment to be ready..."
+          echo "Waiting for deployment to be ready..."
           kubectl rollout status deployment/wiz-todo-app -n wiz --timeout=300s
 
-          echo "📊 Deployment status:"
+          echo "Deployment status:"
           kubectl get pods -n wiz -l app=wiz-todo-app
           kubectl get services -n wiz
           kubectl get ingress -n wiz
 
       - name: Run Application Tests
         run: |
-          echo "🧪 Running application tests..."
+          echo "Running application tests..."
 
           # Get pod name
           POD_NAME=$(kubectl get pods -n wiz -l app=wiz-todo-app -o jsonpath='{.items[0].metadata.name}')
 
           # Test 1: Verify wizexercise.txt file (REQUIREMENT)
-          echo "📄 Testing wizexercise.txt file requirement:"
+          echo "Testing wizexercise.txt file requirement:"
           WIZARD_NAME=$(kubectl exec -n wiz "$POD_NAME" -- cat /app/wizexercise.txt)
-          echo "✅ wizexercise.txt contains: $WIZARD_NAME"
+          echo "wizexercise.txt contains: $WIZARD_NAME"
 
           # Test 2: Health check
-          echo "🏥 Testing health endpoint:"
+          echo "Testing health endpoint:"
           kubectl exec -n wiz "$POD_NAME" -- wget -qO- http://localhost:3000/health
 
           # Test 3: MongoDB connection
-          echo "📊 Testing MongoDB connection:"
+          echo "Testing MongoDB connection:"
           kubectl exec -n wiz "$POD_NAME" -- wget -qO- http://localhost:3000/api/info
 
           # Test 4: Create todo with wizexercise.txt content (FULL CYCLE TEST)
-          echo "📝 Creating todo with wizexercise.txt content:"
+          echo "Creating todo with wizexercise.txt content:"
           kubectl exec -n wiz "$POD_NAME" -- wget -qO- \
             --post-data="{\"task\":\"Wiz demo completed by $WIZARD_NAME\",\"user\":\"$WIZARD_NAME\"}" \
             --header='Content-Type: application/json' \
             http://localhost:3000/api/todos
 
           # Test 5: Verify data in database
-          echo "📋 Verifying data in MongoDB:"
+          echo "Verifying data in MongoDB:"
           kubectl exec -n wiz "$POD_NAME" -- wget -qO- http://localhost:3000/api/todos | grep "$WIZARD_NAME"
 
-          echo "✅ All application tests passed!"
+          echo "All application tests passed!"
 
       - name: Test Kubernetes Admin Privileges (VULNERABILITY DEMO)
         run: |
-          echo "🔒 Testing cluster-admin privileges (intentional vulnerability):"
+          echo "Testing cluster-admin privileges (intentional vulnerability):"
           kubectl auth can-i --list --as=system:serviceaccount:wiz:wiz-todo-app-sa | head -10
-          echo "⚠️  Service account has cluster-admin privileges (security issue for demo)"
+          echo "WARNING: Service account has cluster-admin privileges (security issue for demo)"
 
       - name: Show ALB Endpoint
         run: |
-          echo "⏳ Waiting for ALB to be provisioned..."
+          echo "Waiting for ALB to be provisioned..."
           sleep 60
 
           ALB_DNS=$(kubectl get ingress wiz-todo-ingress -n wiz -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "pending")
 
           if [ "$ALB_DNS" != "pending" ] && [ -n "$ALB_DNS" ]; then
-            echo "🌐 Application URL: http://$ALB_DNS"
-            echo "🧪 Test the application:"
+            echo "Application URL: http://$ALB_DNS"
+            echo "Test the application:"
             echo "  curl http://$ALB_DNS/health"
             echo "  curl http://$ALB_DNS/api/info"
           else
-            echo "⏳ ALB still provisioning. Check later with:"
+            echo "ALB still provisioning. Check later with:"
             echo "  kubectl get ingress wiz-todo-ingress -n wiz"
           fi
 
       - name: Deployment Summary
         run: |
-          echo "🎉 Container Build & Deployment Complete!"
+          echo "Container Build & Deployment Complete!"
           echo ""
-          echo "📊 Deployed Resources:"
+          echo "Deployed Resources:"
           echo "  - Container Image: $IMAGE_URI"
           echo "  - EKS Cluster: $CLUSTER_NAME"
           echo "  - MongoDB IP: $MONGO_IP"
           echo ""
-          echo "🧪 Verification Commands:"
+          echo "Verification Commands:"
           echo "  kubectl get pods -n wiz"
           echo "  kubectl get ingress -n wiz"
           echo "  kubectl exec -n wiz \$(kubectl get pods -n wiz -l app=wiz-todo-app -o jsonpath='{.items[0].metadata.name}') -- cat /app/wizexercise.txt"

@@ -4,7 +4,7 @@
 
 set -e
 
-echo "🧪 Wiz Demo - Infrastructure Validation Tests"
+echo "Wiz Demo - Infrastructure Validation Tests"
 echo "============================================="
 
 # Colors for output
@@ -25,11 +25,11 @@ run_test() {
     echo -e "\n${YELLOW}Testing: $test_name${NC}"
     
     if eval "$test_command" > /dev/null 2>&1; then
-        echo -e "${GREEN}✅ PASS: $test_name${NC}"
+        echo -e "${GREEN}PASS: $test_name${NC}"
         ((TESTS_PASSED++))
         return 0
     else
-        echo -e "${RED}❌ FAIL: $test_name${NC}"
+        echo -e "${RED}FAIL: $test_name${NC}"
         ((TESTS_FAILED++))
         return 1
     fi
@@ -43,12 +43,12 @@ run_test_with_output() {
     echo -e "\n${YELLOW}Testing: $test_name${NC}"
     
     if result=$(eval "$test_command" 2>&1); then
-        echo -e "${GREEN}✅ PASS: $test_name${NC}"
+        echo -e "${GREEN}PASS: $test_name${NC}"
         echo "$result"
         ((TESTS_PASSED++))
         return 0
     else
-        echo -e "${RED}❌ FAIL: $test_name${NC}"
+        echo -e "${RED}FAIL: $test_name${NC}"
         echo "$result"
         ((TESTS_FAILED++))
         return 1
@@ -56,7 +56,7 @@ run_test_with_output() {
 }
 
 echo ""
-echo "🏗️  1. INFRASTRUCTURE VALIDATION TESTS"
+echo "1. INFRASTRUCTURE VALIDATION TESTS"
 echo "======================================"
 
 # Test 1: EKS Cluster Access
@@ -72,7 +72,7 @@ run_test "Backup S3 bucket exists" "aws s3 ls s3://\$(cd terraform && terraform 
 run_test "MongoDB port 27017 is accessible from cluster" "kubectl exec -n wiz deployment/wiz-todo-app -- nc -zv \$(cd terraform && terraform output -raw mongodb_private_ip) 27017"
 
 echo ""
-echo "🚀 2. APPLICATION CONNECTIVITY TESTS"
+echo "2. APPLICATION CONNECTIVITY TESTS"
 echo "===================================="
 
 # Test 5: App can connect to MongoDB
@@ -88,7 +88,7 @@ run_test_with_output "wizexercise.txt file is accessible in container" "kubectl 
 run_test "MongoDB data is accessible via API" "kubectl exec -n wiz deployment/wiz-todo-app -- wget -qO- http://localhost:3000/api/todos"
 
 echo ""
-echo "🌐 3. END-TO-END DEPLOYMENT TESTS"
+echo "3. END-TO-END DEPLOYMENT TESTS"
 echo "================================="
 
 # Test 9: Load balancer is created
@@ -102,12 +102,12 @@ EXTERNAL_URL=$(kubectl get service wiz-todo-service -n wiz -o jsonpath='{.status
 if [ ! -z "$EXTERNAL_URL" ]; then
     run_test "External endpoint is accessible" "curl -s http://$EXTERNAL_URL/health | grep -q 'connected'"
 else
-    echo -e "${RED}❌ FAIL: External endpoint test - No external URL found${NC}"
+    echo -e "${RED}FAIL: External endpoint test - No external URL found${NC}"
     ((TESTS_FAILED++))
 fi
 
 echo ""
-echo "🔒 4. SECURITY VULNERABILITY TESTS"
+echo "4. SECURITY VULNERABILITY TESTS"
 echo "=================================="
 
 # Test 12: SSH is open to world (vulnerability check)
@@ -123,15 +123,15 @@ run_test "Cluster-admin service account vulnerability exists" "kubectl describe 
 run_test "Database credentials in ConfigMap vulnerability exists" "kubectl get configmap wiz-todo-config -n wiz -o yaml | grep -q 'MONGO_URL.*mongodb://'"
 
 echo ""
-echo "📊 TEST SUMMARY"
+echo "TEST SUMMARY"
 echo "==============="
 echo -e "${GREEN}Tests Passed: $TESTS_PASSED${NC}"
 echo -e "${RED}Tests Failed: $TESTS_FAILED${NC}"
 
 if [ $TESTS_FAILED -eq 0 ]; then
-    echo -e "\n${GREEN}🎉 ALL TESTS PASSED! Infrastructure is ready for Wiz demo.${NC}"
+    echo -e "\n${GREEN}ALL TESTS PASSED! Infrastructure is ready for Wiz demo.${NC}"
     exit 0
 else
-    echo -e "\n${RED}⚠️  Some tests failed. Please check the infrastructure.${NC}"
+    echo -e "\n${RED}WARNING: Some tests failed. Please check the infrastructure.${NC}"
     exit 1
 fi

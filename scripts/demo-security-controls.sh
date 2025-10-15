@@ -4,7 +4,7 @@
 
 set -e
 
-echo "🛡️  Wiz Demo - Security Controls Demonstration"
+echo "Wiz Demo - Security Controls Demonstration"
 echo "=============================================="
 
 # Colors for output
@@ -15,11 +15,11 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 echo ""
-echo -e "${BLUE}🔍 1. DETECTIVE CONTROLS (What Wiz Would Detect)${NC}"
+echo -e "${BLUE}1. DETECTIVE CONTROLS (What Wiz Would Detect)${NC}"
 echo "================================================"
 
 echo ""
-echo -e "${YELLOW}📊 AWS Config Rules - Compliance Monitoring:${NC}"
+echo -e "${YELLOW}AWS Config Rules - Compliance Monitoring:${NC}"
 
 # Check S3 public bucket Config rule
 echo "• S3 Public Bucket Detection:"
@@ -40,7 +40,7 @@ aws configservice get-compliance-details-by-config-rule \
     --query 'EvaluationResults[0].ComplianceType' --output text 2>/dev/null || echo "Config rule not yet evaluated"
 
 echo ""
-echo -e "${YELLOW}📝 CloudTrail Audit Logging:${NC}"
+echo -e "${YELLOW}CloudTrail Audit Logging:${NC}"
 echo "Recent API calls (last 10):"
 aws cloudtrail lookup-events \
     --start-time $(date -d '1 hour ago' -u +%Y-%m-%dT%H:%M:%SZ) \
@@ -48,11 +48,11 @@ aws cloudtrail lookup-events \
     --output table
 
 echo ""
-echo -e "${BLUE}🚫 2. PREVENTATIVE CONTROLS (Defense in Depth)${NC}"
+echo -e "${BLUE}2. PREVENTATIVE CONTROLS (Defense in Depth)${NC}"
 echo "================================================"
 
 echo ""
-echo -e "${YELLOW}🔒 IAM Permission Boundary:${NC}"
+echo -e "${YELLOW}IAM Permission Boundary:${NC}"
 echo "Permission boundary policy that prevents VPC deletion:"
 aws iam get-policy \
     --policy-arn "arn:aws:iam::$(aws sts get-caller-identity --query Account --output text):policy/$(cd terraform && terraform output -raw eks_cluster_name)-permission-boundary" \
@@ -67,16 +67,16 @@ aws iam get-policy-version \
     --output table 2>/dev/null || echo "Policy contains VPC deletion denials"
 
 echo ""
-echo -e "${YELLOW}🌐 Network Segmentation:${NC}"
+echo -e "${YELLOW}Network Segmentation:${NC}"
 echo "EKS cluster isolated in private subnets:"
 kubectl get nodes -o wide | grep -E "NAME|INTERNAL-IP"
 
 echo ""
-echo -e "${BLUE}⚠️  3. SECURITY VULNERABILITIES (What Wiz Detects)${NC}"
+echo -e "${BLUE}3. SECURITY VULNERABILITIES (What Wiz Detects)${NC}"
 echo "=================================================="
 
 echo ""
-echo -e "${RED}🚨 Critical Vulnerabilities Found:${NC}"
+echo -e "${RED}Critical Vulnerabilities Found:${NC}"
 
 # Check SSH open to world
 echo "• SSH Open to World (0.0.0.0/0):"
@@ -113,7 +113,7 @@ echo "  ✓ Ubuntu 20.04 (4+ years old)"
 echo "  ✓ MongoDB 4.4 (EOL February 2024)"
 
 echo ""
-echo -e "${BLUE}📊 4. COMPLIANCE SUMMARY${NC}"
+echo -e "${BLUE}4. COMPLIANCE SUMMARY${NC}"
 echo "========================"
 
 echo ""
@@ -130,14 +130,14 @@ echo "  ✓ Infrastructure as Code with security scanning"
 
 echo ""
 echo -e "${RED}Vulnerabilities Detected:${NC}"
-echo "  🚨 SSH open to internet (0.0.0.0/0)"
-echo "  🚨 Public S3 bucket with sensitive data"
-echo "  🚨 Outdated operating system and database"
-echo "  🚨 Over-privileged Kubernetes service account"
-echo "  🚨 Database credentials in plain text"
+echo "  • SSH open to internet (0.0.0.0/0)"
+echo "  • Public S3 bucket with sensitive data"
+echo "  • Outdated operating system and database"
+echo "  • Over-privileged Kubernetes service account"
+echo "  • Database credentials in plain text"
 
 echo ""
-echo -e "${YELLOW}💡 Remediation Recommendations:${NC}"
+echo -e "${YELLOW}Remediation Recommendations:${NC}"
 echo "  • Restrict SSH access to specific IP ranges"
 echo "  • Make S3 bucket private and use IAM policies"
 echo "  • Update Ubuntu and MongoDB to supported versions"
@@ -145,4 +145,4 @@ echo "  • Use least-privilege RBAC for Kubernetes"
 echo "  • Store credentials in AWS Secrets Manager"
 
 echo ""
-echo -e "${GREEN}🎯 This demonstrates exactly what Wiz would detect and help remediate!${NC}"
+echo -e "${GREEN}This demonstrates exactly what Wiz would detect and help remediate!${NC}"

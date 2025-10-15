@@ -35,22 +35,29 @@ The setup costs me about $3-4/day to run in my personal AWS account.
 │  │  │  Load Balancer  │    │      EKS Cluster            │ │ │
 │  │  │  (ALB)          │    │                             │ │ │
 │  │  │                 │    │  ┌─────────────────────────┐ │ │ │
-│  │  │  MongoDB VM     │    │  │    Todo App             │ │ │ │
-│  │  │  - Ubuntu 20.04 │    │  │    - Node.js 18 (current) │ │ │ │
+│  │  │  MongoDB VM     │    │  │    Todo App Pods        │ │ │ │
+│  │  │  - Ubuntu 20.04 │    │  │    - Node.js 18         │ │ │ │
 │  │  │  - SSH: 0.0.0.0/0│   │  │    - cluster-admin SA   │ │ │ │
 │  │  │  - IAM: ec2:*   │    │  │    - wizexercise.txt    │ │ │ │
+│  │  │                 │    │  │    - Images from ECR    │ │ │ │
 │  │  │                 │    │  └─────────────────────────┘ │ │ │
 │  │  └─────────────────┘    └─────────────────────────────┘ │ │
 │  └─────────────────────────────────────────────────────────┘ │
 │                                                             │
-│  S3 Storage:                Security Monitoring:           │
+│  Container Registry:        S3 Storage:                     │
 │  ┌─────────────────┐        ┌─────────────────────────────┐ │
-│  │ Backup Bucket   │        │ • CloudTrail (API logs)     │ │
-│  │ (PUBLIC!)       │        │ • AWS Config (compliance)   │ │
-│  │                 │        │ • Container scanning        │ │
-│  │ CloudTrail      │        │ • Infrastructure scanning   │ │
-│  │ (Private)       │        └─────────────────────────────┘ │
-│  └─────────────────┘                                        │
+│  │ ECR Repository  │        │ Backup Bucket (PUBLIC!)    │ │
+│  │ - Todo App      │        │ CloudTrail (Private)       │ │
+│  │   Images        │        │ Config (Private)           │ │
+│  │ - Vulnerability │        └─────────────────────────────┘ │
+│  │   Scanning      │                                        │
+│  └─────────────────┘        Security Monitoring:           │
+│                             ┌─────────────────────────────┐ │
+│                             │ • CloudTrail (API logs)     │ │
+│                             │ • AWS Config (compliance)   │ │
+│                             │ • Container scanning (ECR)  │ │
+│                             │ • Infrastructure scanning   │ │
+│                             └─────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -90,7 +97,9 @@ The whole thing is automated through GitHub Actions - this was a big learning cu
 - Deploys VPC, EKS, MongoDB VM, S3 buckets, monitoring
 
 **Container Security Pipeline:**
-- Trivy scans Docker images for vulnerabilities  
+- Docker images built and pushed to ECR
+- Trivy scans container images for vulnerabilities
+- ECR vulnerability scanning enabled
 - Container security scanning integrated into CI/CD
 - Results uploaded to GitHub Security tab
 
@@ -104,10 +113,11 @@ This DevSecOps approach means security is baked into the deployment process, not
 ## Tech Stack
 
 - **Infrastructure:** Terraform
-- **Containers:** Docker + Kubernetes (EKS)
+- **Containers:** Docker + Kubernetes (EKS) + ECR
 - **Application:** Node.js Todo app
 - **Database:** MongoDB on EC2
 - **CI/CD:** GitHub Actions with security scanning
+- **Container Registry:** AWS ECR with vulnerability scanning
 - **Monitoring:** CloudTrail, AWS Config
 
 ## Demo Points
