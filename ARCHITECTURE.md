@@ -144,8 +144,7 @@ Internet → Classic ELB → EKS Pods → MongoDB VM
 - **Excessive IAM**: VM can create/delete EC2 instances, full S3 access
 
 ### High Risk
-- **Outdated Software**: Ubuntu 20.04 (4+ years), MongoDB 4.4 (EOL Feb 2024)
-- **Container Vulnerabilities**: Node.js 16.14.0, Alpine 3.15 with known CVEs
+- **Outdated VM Software**: Ubuntu 20.04 (4+ years), MongoDB 4.4 (EOL Feb 2024)
 - **Kubernetes Over-Privileges**: Service account has cluster-admin rights
 - **Credentials in ConfigMap**: MongoDB connection string in plain text
 

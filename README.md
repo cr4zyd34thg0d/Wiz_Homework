@@ -6,10 +6,9 @@ Built this in my personal AWS account to show some common cloud security issues 
 
 I set up a bunch of intentional security issues that are pretty common:
 - **Public S3 bucket** - database backups anyone can download
-- **Old software** - Ubuntu 20.04 and MongoDB 4.4 (both way outdated)
+- **Old VM software** - Ubuntu 20.04 and MongoDB 4.4 (both way outdated)
 - **SSH open to the world** - classic mistake
 - **Way too many IAM permissions** - VM can basically create anything
-- **Vulnerable containers** - old Node.js with known issues
 - **Kubernetes over-privileges** - service account has admin rights to everything
 
 Kept it cheap - runs about $4/day in my AWS account.
@@ -53,10 +52,9 @@ aws eks update-kubeconfig --region us-east-1 --name wiz-exercise-dev
 
 ### Issues (on purpose)
 - Public S3 bucket with database backups
-- Old Ubuntu and MongoDB versions
+- Old Ubuntu and MongoDB versions on the VM
 - SSH open to everyone
 - Way too many IAM permissions
-- Outdated container images
 - Kubernetes service account with admin rights
 
 ### Controls (the good stuff)

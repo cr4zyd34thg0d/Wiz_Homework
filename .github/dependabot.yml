@@ -1,9 +1,10 @@
-# Dependabot configuration for Wiz Exercise v4
-# Enables automated dependency scanning and updates
+# Dependabot configuration for Wiz Exercise
+# Keep GitHub Actions and app dependencies updated
+# VM and MongoDB stay vulnerable for security demo
 
 version: 2
 updates:
-  # GitHub Actions dependencies
+  # GitHub Actions dependencies - keep these updated
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
@@ -16,7 +17,7 @@ updates:
       prefix: "chore"
       include: "scope"
 
-  # Node.js dependencies (application)
+  # Node.js dependencies - keep these updated for security
   - package-ecosystem: "npm"
     directory: "/app"
     schedule:
@@ -28,31 +29,6 @@ updates:
     commit-message:
       prefix: "chore"
       include: "scope"
-    # Only security updates for this demo project
-    versioning-strategy: increase-if-necessary
-    
-  # Docker dependencies
-  - package-ecosystem: "docker"
-    directory: "/app"
-    schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 5
-    labels:
-      - "dependencies"
-      - "docker"
-    commit-message:
-      prefix: "chore"
-      include: "scope"
 
-  # Terraform dependencies (if using modules from registry)
-  - package-ecosystem: "terraform"
-    directory: "/terraform"
-    schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 5
-    labels:
-      - "dependencies"
-      - "terraform"
-    commit-message:
-      prefix: "chore"
-      include: "scope"
+# Note: VM (Ubuntu 20.04) and MongoDB (4.4) stay vulnerable intentionally
+# These are configured in Terraform and should NOT be updated
