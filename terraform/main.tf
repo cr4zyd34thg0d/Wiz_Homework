@@ -151,7 +151,8 @@ resource "aws_security_group" "mongodb_vm" {
 
 # Public S3 bucket (VULNERABLE)
 resource "aws_s3_bucket" "backup" {
-  bucket = "${local.name_prefix}-backup-${random_string.bucket_suffix.result}"
+  bucket        = "${local.name_prefix}-backup-${random_string.bucket_suffix.result}"
+  force_destroy = true
 }
 
 resource "random_string" "bucket_suffix" {
@@ -467,7 +468,8 @@ resource "aws_eks_node_group" "main" {
 
 # CloudTrail (REQUIRED - Control plane audit logging)
 resource "aws_s3_bucket" "cloudtrail" {
-  bucket = "${local.name_prefix}-cloudtrail-${random_string.bucket_suffix.result}"
+  bucket        = "${local.name_prefix}-cloudtrail-${random_string.bucket_suffix.result}"
+  force_destroy = true
 }
 
 resource "aws_s3_bucket_policy" "cloudtrail" {
@@ -504,7 +506,8 @@ resource "aws_cloudtrail" "main" {
 
 # AWS Config (DETECTIVE CONTROL - detects public S3 buckets)
 resource "aws_s3_bucket" "config" {
-  bucket = "${local.name_prefix}-config-${random_string.bucket_suffix.result}"
+  bucket        = "${local.name_prefix}-config-${random_string.bucket_suffix.result}"
+  force_destroy = true
 }
 
 resource "aws_iam_role" "config" {
