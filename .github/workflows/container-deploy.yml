@@ -35,19 +35,41 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
       - name: Get Infrastructure Details
         id: infra
         run: |
           if [ "${{ github.event.inputs.mongodb_ip }}" = "auto-detect" ] || [ -z "${{ github.event.inputs.mongodb_ip }}" ]; then
             # Auto-detect from Terraform outputs
+            echo "Auto-detecting infrastructure details from Terraform..."
             cd terraform
-            echo "MONGO_IP=$(terraform output -raw mongodb_private_ip)" >> $GITHUB_ENV
-            echo "CLUSTER_NAME=$(terraform output -raw eks_cluster_name)" >> $GITHUB_ENV
+            
+            # Initialize Terraform backend
+            ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+            sed -i "s/wiz-tf-state-ACCOUNT_ID/wiz-tf-state-${ACCOUNT_ID}/g" backend.conf || true
+            terraform init -backend-config=backend.conf
+            
+            # Get outputs
+            MONGO_IP=$(terraform output -raw mongodb_private_ip)
+            CLUSTER_NAME=$(terraform output -raw eks_cluster_name)
+            
+            echo "MONGO_IP=$MONGO_IP" >> $GITHUB_ENV
+            echo "CLUSTER_NAME=$CLUSTER_NAME" >> $GITHUB_ENV
+            
+            echo "Detected MongoDB IP: $MONGO_IP"
+            echo "Detected Cluster Name: $CLUSTER_NAME"
             cd ..
           else
             # Use provided inputs
+            echo "Using provided infrastructure details..."
             echo "MONGO_IP=${{ github.event.inputs.mongodb_ip }}" >> $GITHUB_ENV
             echo "CLUSTER_NAME=${{ github.event.inputs.cluster_name }}" >> $GITHUB_ENV
+            echo "MongoDB IP: ${{ github.event.inputs.mongodb_ip }}"
+            echo "Cluster Name: ${{ github.event.inputs.cluster_name }}"
           fi
 
       - name: Container Security Scan (Pre-build)
