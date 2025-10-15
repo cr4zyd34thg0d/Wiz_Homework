@@ -5,9 +5,10 @@ on:
       environment:
         description: 'Environment to deploy to'
         required: true
-        default: 'dev'
+        default: 'demo'
         type: choice
         options:
+        - demo
         - dev
         - staging
         - prod
@@ -43,7 +44,7 @@ jobs:
       - name: Build and push Docker image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: wiz-exercise-dev-app
+          ECR_REPOSITORY: wiz-exercise-demo-app
           IMAGE_TAG: ${{ github.sha }}
         run: |
           echo "🐳 Building Docker image..."
@@ -83,7 +84,7 @@ jobs:
       - name: Update kubeconfig
         run: |
           echo "🔧 Configuring kubectl..."
-          aws eks update-kubeconfig --region ${{ secrets.AWS_REGION }} --name wiz-exercise-dev
+          aws eks update-kubeconfig --region ${{ secrets.AWS_REGION }} --name wiz-exercise-demo
       
       - name: Update Kubernetes manifests
         env:
