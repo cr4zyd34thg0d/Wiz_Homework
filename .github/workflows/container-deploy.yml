@@ -43,17 +43,11 @@ jobs:
             cd terraform
             echo "MONGO_IP=$(terraform output -raw mongodb_private_ip)" >> $GITHUB_ENV
             echo "CLUSTER_NAME=$(terraform output -raw eks_cluster_name)" >> $GITHUB_ENV
+            cd ..
           else
             # Use provided inputs
             echo "MONGO_IP=${{ github.event.inputs.mongodb_ip }}" >> $GITHUB_ENV
             echo "CLUSTER_NAME=${{ github.event.inputs.cluster_name }}" >> $GITHUB_ENV
-          else
-            # Auto-trigger or push - get from Terraform outputs
-            cd terraform
-            terraform init -backend-config=backend.conf
-            echo "MONGO_IP=$(terraform output -raw mongodb_private_ip)" >> $GITHUB_ENV
-            echo "CLUSTER_NAME=$(terraform output -raw eks_cluster_name)" >> $GITHUB_ENV
-            cd ..
           fi
 
       - name: Container Security Scan (Pre-build)
