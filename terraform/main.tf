@@ -599,12 +599,5 @@ output "ssh_private_key" {
   sensitive   = true
 }
 
-output "alb_dns_name" {
-  description = "DNS name of the Application Load Balancer"
-  value       = aws_lb.app.dns_name
-}
-
-output "alb_target_group_arn" {
-  description = "ARN of the ALB target group for pod registration"
-  value       = aws_lb_target_group.app.arn
-}
+# Load balancer will be created by Kubernetes LoadBalancer service
+# No ALB outputs needed - ELB DNS will be available via kubectl
