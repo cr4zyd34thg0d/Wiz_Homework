@@ -49,7 +49,7 @@ aws eks update-kubeconfig --region us-east-1 --name wiz-exercise-dev
 ./scripts/test-infrastructure.sh
 ```
 
-## Security Stuff
+## Security
 
 ### Issues (on purpose)
 - Public S3 bucket with database backups
@@ -60,9 +60,9 @@ aws eks update-kubeconfig --region us-east-1 --name wiz-exercise-dev
 - Kubernetes service account with admin rights
 
 ### Controls (the good stuff)
-- AWS Config rules to catch public buckets
+- AWS Config rules to catch public buckets/ssl/open ssh
 - CloudTrail for audit logs
-- IAM policies to prevent some bad things
+- IAM permission boundary to prevent deletion of VPC
 - Security scanning in the CI/CD pipeline
 
 ## Testing It
@@ -80,8 +80,7 @@ aws eks update-kubeconfig --region us-east-1 --name wiz-exercise-dev
 ```
 ├── terraform/           # Infrastructure code
 ├── app/                # Node.js app with wizexercise.txt
-├── k8s/                # Kubernetes configs
-└── scripts/            # Test and demo scripts
+└──k8s/                # Kubernetes configs
 ```
 
 ## For the Demo
@@ -102,12 +101,3 @@ kubectl get service wiz-todo-service -n wiz
 cd terraform
 terraform destroy
 ```
-
-## Scripts
-
-- `test-infrastructure.sh` - makes sure everything works
-- `demo-security-controls.sh` - shows the security issues
-
-## Notes
-
-This shows I can build real infrastructure with actual security problems that tools like Wiz would catch. It's running in my AWS account so it's not just theory - it actually works.
