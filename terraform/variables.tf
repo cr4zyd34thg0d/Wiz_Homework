@@ -7,7 +7,7 @@ variable "aws_region" {
 
 variable "environment" {
   description = "Environment name"
-  default     = "dev"
+  default     = "demo"
 }
 
 variable "vpc_cidr" {
@@ -17,5 +17,5 @@ variable "vpc_cidr" {
 
 variable "key_pair_name" {
   description = "EC2 Key Pair for SSH access"
-  default     = "wiz-exercise-keypair"
+  default     = "wiz-exercise-demo-keypair"
 }
