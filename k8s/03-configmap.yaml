@@ -7,5 +7,5 @@ metadata:
     app: wiz-todo-app
     component: config
 data:
-  # This will be updated with the actual MongoDB private IP during deployment
+  # HArdCode for Demo purposes.
   MONGO_URL: "mongodb://wiz:Wiz!2024@10.0.1.87:27017/todoapp?authSource=admin"

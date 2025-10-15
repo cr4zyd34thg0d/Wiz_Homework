@@ -44,6 +44,14 @@ test-deployment.sh
 SECURITY_CONTROLS.md
 architecture-diagram.drawio
 
+# Development artifacts
+.kiro/
+*-backup.*
+*-old.*
+*-temp.*
+DEPLOYMENT_GUIDE.md
+cleanup-for-interview.sh
+
 # Any accidentally created command files
 *subnet*
 *ubnet*
