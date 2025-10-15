@@ -46,6 +46,7 @@ architecture-diagram.drawio
 
 # Development artifacts
 .kiro/
+scripts/
 *-backup.*
 *-old.*
 *-temp.*
