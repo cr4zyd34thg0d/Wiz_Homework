@@ -1,0 +1,186 @@
+name: Infrastructure Deployment (IaC)
+
+on:
+  workflow_dispatch:
+    inputs:
+      destroy_first:
+        description: 'Destroy existing resources first (true/false)'
+        required: false
+        default: 'false'
+  push:
+    branches: [ main ]
+    paths:
+      - 'terraform/**'
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy-infrastructure:
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+    
+    outputs:
+      mongodb_ip: ${{ steps.tf-outputs.outputs.mongodb_ip }}
+      cluster_name: ${{ steps.tf-outputs.outputs.cluster_name }}
+      backup_bucket: ${{ steps.tf-outputs.outputs.backup_bucket }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+      
+      - name: Bootstrap Terraform state backend
+        run: |
+          set -e
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          BUCKET="wiz-tf-state-${ACCOUNT_ID}"
+          TABLE="wiz-tf-lock"
+          
+          echo "🚀 Bootstrapping Terraform state backend..."
+          
+          # Create S3 bucket (idempotent)
+          aws s3api head-bucket --bucket "$BUCKET" 2>/dev/null || {
+            if [ "$AWS_REGION" = "us-east-1" ]; then
+              aws s3api create-bucket --bucket "$BUCKET"
+            else
+              aws s3api create-bucket --bucket "$BUCKET" --create-bucket-configuration LocationConstraint="$AWS_REGION"
+            fi
+            echo "✅ Created S3 bucket: $BUCKET"
+          }
+          
+          # Enable versioning and encryption
+          aws s3api put-bucket-versioning --bucket "$BUCKET" --versioning-configuration Status=Enabled
+          aws s3api put-bucket-encryption --bucket "$BUCKET" --server-side-encryption-configuration '{
+            "Rules": [{"ApplyServerSideEncryptionByDefault": {"SSEAlgorithm": "AES256"}}]
+          }'
+          
+          # Create DynamoDB table (idempotent)
+          aws dynamodb describe-table --table-name "$TABLE" 2>/dev/null || {
+            aws dynamodb create-table \
+              --table-name "$TABLE" \
+              --attribute-definitions AttributeName=LockID,AttributeType=S \
+              --key-schema AttributeName=LockID,KeyType=HASH \
+              --billing-mode PAY_PER_REQUEST
+            aws dynamodb wait table-exists --table-name "$TABLE"
+            echo "✅ Created DynamoDB table: $TABLE"
+          }
+          
+          # Update backend config
+          sed -i "s/wiz-tf-state-ACCOUNT_ID/wiz-tf-state-${ACCOUNT_ID}/g" terraform/backend.conf
+      
+      - name: TfSec Infrastructure Security Scan
+        continue-on-error: true
+        uses: aquasecurity/tfsec-action@v1.0.3
+        with:
+          working_directory: terraform
+          format: sarif
+          output: tfsec-results.sarif
+      
+      - name: Upload TfSec results
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        continue-on-error: true
+        with:
+          sarif_file: tfsec-results.sarif
+      
+      - name: Terraform Init
+        working-directory: terraform
+        run: |
+          echo "🔧 Initializing Terraform..."
+          terraform init -backend-config=backend.conf
+      
+      - name: Terraform Validate
+        working-directory: terraform
+        run: |
+          echo "✅ Validating Terraform configuration..."
+          terraform validate
+      
+      - name: Terraform Plan
+        working-directory: terraform
+        run: |
+          echo "📋 Creating Terraform plan..."
+          terraform plan -var="aws_region=$AWS_REGION" -out=tfplan
+      
+      - name: Terraform Apply
+        working-directory: terraform
+        run: |
+          echo "🚀 Applying Terraform infrastructure..."
+          terraform apply -auto-approve tfplan
+      
+      - name: Get Infrastructure Outputs
+        id: tf-outputs
+        working-directory: terraform
+        run: |
+          echo "📊 Getting Terraform outputs..."
+          MONGO_IP=$(terraform output -raw mongodb_private_ip)
+          CLUSTER_NAME=$(terraform output -raw eks_cluster_name)
+          BACKUP_BUCKET=$(terraform output -raw backup_bucket_name)
+          
+          echo "mongodb_ip=$MONGO_IP" >> $GITHUB_OUTPUT
+          echo "cluster_name=$CLUSTER_NAME" >> $GITHUB_OUTPUT
+          echo "backup_bucket=$BACKUP_BUCKET" >> $GITHUB_OUTPUT
+          
+          echo "✅ Infrastructure deployed successfully!"
+          echo "  MongoDB IP: $MONGO_IP"
+          echo "  EKS Cluster: $CLUSTER_NAME"
+          echo "  Backup Bucket: $BACKUP_BUCKET"
+      
+      - name: Install AWS Load Balancer Controller
+        run: |
+          echo "🚀 Installing AWS Load Balancer Controller..."
+          
+          # Configure kubectl
+          aws eks update-kubeconfig --region $AWS_REGION --name ${{ steps.tf-outputs.outputs.cluster_name }}
+          
+          # Download IAM policy
+          curl -o iam_policy.json https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.7.2/docs/install/iam_policy.json
+          
+          # Create IAM policy (idempotent)
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          aws iam create-policy \
+            --policy-name AWSLoadBalancerControllerIAMPolicy \
+            --policy-document file://iam_policy.json 2>/dev/null || echo "Policy exists"
+          
+          # Install eksctl
+          curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
+          sudo mv /tmp/eksctl /usr/local/bin
+          
+          # Create service account with IAM role
+          eksctl create iamserviceaccount \
+            --cluster=${{ steps.tf-outputs.outputs.cluster_name }} \
+            --namespace=kube-system \
+            --name=aws-load-balancer-controller \
+            --role-name=AmazonEKSLoadBalancerControllerRole \
+            --attach-policy-arn=arn:aws:iam::$ACCOUNT_ID:policy/AWSLoadBalancerControllerIAMPolicy \
+            --approve \
+            --override-existing-serviceaccounts
+          
+          # Install Helm
+          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+          
+          # Add EKS Helm repository and install controller
+          helm repo add eks https://aws.github.io/eks-charts
+          helm repo update
+          helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
+            -n kube-system \
+            --set clusterName=${{ steps.tf-outputs.outputs.cluster_name }} \
+            --set serviceAccount.create=false \
+            --set serviceAccount.name=aws-load-balancer-controller
+          
+          # Wait for controller to be ready
+          kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=aws-load-balancer-controller -n kube-system --timeout=300s
+          
+          echo "✅ AWS Load Balancer Controller installed successfully!"

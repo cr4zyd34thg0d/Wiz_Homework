@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: wiz-todo-config
+  namespace: wiz
+  labels:
+    app: wiz-todo-app
+    component: config
+data:
+  # This will be updated with the actual MongoDB private IP during deployment
+  MONGO_URL: "mongodb://wiz:Wiz!2024@10.0.1.83:27017/todoapp?authSource=admin"

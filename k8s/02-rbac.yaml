@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: wiz-todo-app-sa
+  namespace: wiz
+  labels:
+    app: wiz-todo-app
+    component: service-account
+
+---
+# INTENTIONAL SECURITY VULNERABILITY: Cluster-admin privileges
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: wiz-todo-app-admin
+  labels:
+    app: wiz-todo-app
+    component: rbac
+    security-issue: over-privileged
+subjects:
+- kind: ServiceAccount
+  name: wiz-todo-app-sa
+  namespace: wiz
+roleRef:
+  kind: ClusterRole
+  name: cluster-admin
+  apiGroup: rbac.authorization.k8s.io

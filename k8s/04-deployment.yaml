@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wiz-todo-app
+  namespace: wiz
+  labels:
+    app: wiz-todo-app
+    component: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: wiz-todo-app
+  template:
+    metadata:
+      labels:
+        app: wiz-todo-app
+        component: backend
+    spec:
+      serviceAccountName: wiz-todo-app-sa
+      containers:
+      - name: wiz-todo-app
+        image: 491085396284.dkr.ecr.us-east-1.amazonaws.com/wiz-exercise-dev-app:latest  # Will be replaced during deployment
+        ports:
+        - containerPort: 3000
+          name: http
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: PORT
+          value: "3000"
+        - name: MONGO_URL
+          valueFrom:
+            configMapKeyRef:
+              name: wiz-todo-config
+              key: MONGO_URL
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false

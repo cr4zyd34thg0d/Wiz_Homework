@@ -36,7 +36,7 @@ The setup costs me about $3-4/day to run in my personal AWS account.
 │  │  │  (ALB)          │    │                             │ │ │
 │  │  │                 │    │  ┌─────────────────────────┐ │ │ │
 │  │  │  MongoDB VM     │    │  │    Todo App             │ │ │ │
-│  │  │  - Ubuntu 20.04 │    │  │    - Node.js 16.14.0    │ │ │ │
+│  │  │  - Ubuntu 20.04 │    │  │    - Node.js 18 (current) │ │ │ │
 │  │  │  - SSH: 0.0.0.0/0│   │  │    - cluster-admin SA   │ │ │ │
 │  │  │  - IAM: ec2:*   │    │  │    - wizexercise.txt    │ │ │ │
 │  │  │                 │    │  └─────────────────────────┘ │ │ │
@@ -64,9 +64,9 @@ Based on my security experience, these are the most common issues I see:
 - **Over-privileged IAM** - VM can create/delete EC2 instances
 
 **High Risk:**
-- **Outdated software** - Ubuntu 20.04, MongoDB 4.4, Node.js 16.14.0
+- **Outdated software** - Ubuntu 20.04 (4+ years old), MongoDB 4.4 (EOL Feb 2024)
 - **Kubernetes over-privileges** - Service account has cluster-admin
-- **Container vulnerabilities** - Known CVEs in base images
+- **Database credentials exposed** - MongoDB credentials in Kubernetes ConfigMap
 
 ## Security Controls I Added
 
@@ -90,8 +90,8 @@ The whole thing is automated through GitHub Actions - this was a big learning cu
 - Deploys VPC, EKS, MongoDB VM, S3 buckets, monitoring
 
 **Container Security Pipeline:**
-- Trivy scans Docker images for vulnerabilities
-- Detects CVEs in Node.js 16.14.0 and Alpine 3.15
+- Trivy scans Docker images for vulnerabilities  
+- Container security scanning integrated into CI/CD
 - Results uploaded to GitHub Security tab
 
 **Kubernetes Deployment:**
@@ -113,7 +113,7 @@ This DevSecOps approach means security is baked into the deployment process, not
 ## Demo Points
 
 1. **Show the public S3 bucket** - `aws s3 ls s3://bucket-name --no-sign-request`
-2. **Check Kubernetes permissions** - `kubectl auth can-i --list --as=system:serviceaccount:default:wiz-todo-app-sa`
+2. **Check Kubernetes permissions** - `kubectl auth can-i --list --as=system:serviceaccount:wiz:wiz-todo-app-sa`
 3. **Verify wizexercise.txt** - `kubectl exec pod-name -- cat /app/wizexercise.txt`
 4. **SSH to MongoDB VM** - Show it's accessible from anywhere
 

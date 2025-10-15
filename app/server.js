@@ -5,31 +5,22 @@ const app = express();
 const port = process.env.PORT || 3000;
 
 // MongoDB connection with authentication
-const mongoHost = process.env.MONGODB_HOST || 'localhost';
-const mongoPort = process.env.MONGODB_PORT || '27017';
-const mongoUser = process.env.MONGODB_USER || 'todoapp';
-const mongoPass = process.env.MONGODB_PASS || 'todopass';
-const dbName = process.env.MONGODB_DATABASE || 'todoapp';
-
-const mongoUri = `mongodb://${mongoUser}:${mongoPass}@${mongoHost}:${mongoPort}/${dbName}`;
+// Use MONGO_URL environment variable (set by Kubernetes ConfigMap)
+const mongoUri = process.env.MONGO_URL || 'mongodb://localhost:27017/todoapp';
 
 let db;
 
-// Connect to MongoDB (skip if host is disabled)
-if (mongoHost && mongoHost !== 'disabled' && mongoHost !== '') {
-  console.log(`Attempting MongoDB connection to: ${mongoUri}`);
-  MongoClient.connect(mongoUri)
-    .then(client => {
-      console.log('Connected to MongoDB with authentication');
-      db = client.db(dbName);
-    })
-    .catch(error => {
-      console.error('MongoDB connection failed:', error.message);
-      // Continue without MongoDB for demo purposes
-    });
-} else {
-  console.log('MongoDB connection disabled - running without database');
-}
+// Connect to MongoDB
+console.log(`Attempting MongoDB connection to: ${mongoUri}`);
+MongoClient.connect(mongoUri)
+  .then(client => {
+    console.log('Connected to MongoDB successfully');
+    db = client.db('todoapp');
+  })
+  .catch(error => {
+    console.error('MongoDB connection failed:', error.message);
+    console.error('Application will continue without database functionality');
+  });
 
 app.use(express.json());
 
@@ -94,9 +85,7 @@ app.get('/api/info', (req, res) => {
     version: '1.0.0',
     environment: process.env.NODE_ENV || 'development',
     mongodb: {
-      host: mongoHost,
-      port: mongoPort,
-      database: dbName,
+      uri: mongoUri.replace(/\/\/.*@/, '//***:***@'), // Hide credentials in logs
       connected: !!db
     },
     vulnerabilities: [

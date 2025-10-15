@@ -2,23 +2,21 @@
 # This Dockerfile demonstrates common container security issues that tools like Wiz detect
 # Built for educational purposes to show real-world vulnerabilities
 
-FROM node:16.14.0-alpine3.15
+FROM node:18-alpine
 
 # 🚨 INTENTIONAL SECURITY VULNERABILITIES FOR DEMONSTRATION:
 # 
-# 1. OUTDATED BASE IMAGE:
-#    - Node.js 16.14.0 (released Jan 2022, now 2+ years old)
-#    - Known CVEs: CVE-2022-0778 (OpenSSL DoS), CVE-2022-21824 (Node.js prototype pollution)
-#    - Alpine 3.15 (released Nov 2021, outdated packages)
+# 1. KUBERNETES OVER-PRIVILEGES:
+#    - Service account with cluster-admin privileges (configured in K8s manifests)
+#    - Container can perform any action in the cluster
 #
-# 2. SECURITY IMPACT:
-#    - Remote code execution potential
-#    - Denial of service vulnerabilities  
-#    - Package vulnerabilities in base OS
+# 2. MONGODB CREDENTIALS IN ENV:
+#    - Database credentials passed via environment variables
+#    - Visible in container inspection and process lists
 #
 # 3. DETECTION:
-#    - Wiz would immediately flag these CVEs
-#    - Container image scanning would show high/critical findings
+#    - Wiz would flag over-privileged service accounts
+#    - Security scanners would detect credential exposure
 #    - Compliance frameworks would mark as non-compliant
 
 # Set working directory

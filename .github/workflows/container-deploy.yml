@@ -1,0 +1,249 @@
+name: Container Build & Kubernetes Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      mongodb_ip:
+        description: 'MongoDB Private IP (from infrastructure pipeline)'
+        required: true
+      cluster_name:
+        description: 'EKS Cluster Name (from infrastructure pipeline)'
+        required: true
+  push:
+    branches: [ main ]
+    paths:
+      - 'app/**'
+      - 'k8s/**'
+  workflow_run:
+    workflows: ["Infrastructure Deployment (IaC)"]
+    types:
+      - completed
+
+permissions:
+  id-token: write
+  contents: read
+  security-events: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' || github.event_name == 'push' }}
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      
+      - name: Get Infrastructure Details
+        id: infra
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # Manual trigger - use provided inputs
+            echo "MONGO_IP=${{ github.event.inputs.mongodb_ip }}" >> $GITHUB_ENV
+            echo "CLUSTER_NAME=${{ github.event.inputs.cluster_name }}" >> $GITHUB_ENV
+          else
+            # Auto-trigger or push - get from Terraform outputs
+            cd terraform
+            terraform init -backend-config=backend.conf
+            echo "MONGO_IP=$(terraform output -raw mongodb_private_ip)" >> $GITHUB_ENV
+            echo "CLUSTER_NAME=$(terraform output -raw eks_cluster_name)" >> $GITHUB_ENV
+            cd ..
+          fi
+      
+      - name: Container Security Scan (Pre-build)
+        uses: aquasecurity/trivy-action@master
+        continue-on-error: true
+        with:
+          scan-type: 'fs'
+          scan-ref: './app'
+          format: 'sarif'
+          output: 'trivy-fs-results.sarif'
+      
+      - name: Upload Trivy filesystem scan results
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        continue-on-error: true
+        with:
+          sarif_file: 'trivy-fs-results.sarif'
+      
+      - name: Build Container Image
+        run: |
+          echo "🐳 Building container image..."
+          cd app
+          
+          # Build image with build args
+          docker build \
+            --build-arg CANDIDATE_NAME="Devon Diffie" \
+            -t wiz-todo-app:${{ github.sha }} \
+            -t wiz-todo-app:latest \
+            .
+          
+          echo "✅ Container built successfully"
+      
+      - name: Container Security Scan (Post-build)
+        uses: aquasecurity/trivy-action@master
+        continue-on-error: true
+        with:
+          image-ref: 'wiz-todo-app:latest'
+          format: 'sarif'
+          output: 'trivy-image-results.sarif'
+      
+      - name: Upload Trivy image scan results
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        continue-on-error: true
+        with:
+          sarif_file: 'trivy-image-results.sarif'
+      
+      - name: Container Security Scan (Table Output)
+        uses: aquasecurity/trivy-action@master
+        continue-on-error: true
+        with:
+          image-ref: 'wiz-todo-app:latest'
+          format: 'table'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+      
+      - name: Push to ECR
+        run: |
+          echo "📤 Pushing container to ECR..."
+          
+          # Create ECR repository if needed
+          aws ecr describe-repositories --repository-names wiz-exercise-dev-app 2>/dev/null || \
+            aws ecr create-repository --repository-name wiz-exercise-dev-app
+          
+          # Login to ECR
+          aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin \
+            $(aws sts get-caller-identity --query Account --output text).dkr.ecr.$AWS_REGION.amazonaws.com
+          
+          # Tag and push image
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          IMAGE_URI="$ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/wiz-exercise-dev-app:${{ github.sha }}"
+          IMAGE_URI_LATEST="$ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/wiz-exercise-dev-app:latest"
+          
+          docker tag wiz-todo-app:${{ github.sha }} "$IMAGE_URI"
+          docker tag wiz-todo-app:latest "$IMAGE_URI_LATEST"
+          
+          docker push "$IMAGE_URI"
+          docker push "$IMAGE_URI_LATEST"
+          
+          echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
+          echo "✅ Container pushed to ECR: $IMAGE_URI"
+      
+      - name: Configure kubectl
+        run: |
+          echo "🔧 Configuring kubectl for cluster: $CLUSTER_NAME"
+          aws eks update-kubeconfig --region $AWS_REGION --name $CLUSTER_NAME
+          
+          # Test connection
+          kubectl get nodes
+          echo "✅ kubectl configured successfully"
+      
+      - name: Deploy to Kubernetes
+        run: |
+          echo "🚀 Deploying application to Kubernetes..."
+          
+          # Create working copies of manifests
+          cp -r k8s /tmp/k8s-deploy
+          
+          # Update ConfigMap with MongoDB IP
+          sed -i "s/MONGO_PRIVATE_IP/$MONGO_IP/g" /tmp/k8s-deploy/03-configmap.yaml
+          
+          # Update deployment with image URI
+          sed -i "s|CONTAINER_IMAGE_URI|$IMAGE_URI|g" /tmp/k8s-deploy/04-deployment.yaml
+          
+          # Apply manifests in order
+          kubectl apply -f /tmp/k8s-deploy/01-namespace.yaml
+          kubectl apply -f /tmp/k8s-deploy/02-rbac.yaml
+          kubectl apply -f /tmp/k8s-deploy/03-configmap.yaml
+          kubectl apply -f /tmp/k8s-deploy/04-deployment.yaml
+          kubectl apply -f /tmp/k8s-deploy/05-service.yaml
+          kubectl apply -f /tmp/k8s-deploy/06-ingress.yaml
+          
+          echo "✅ Kubernetes manifests applied"
+      
+      - name: Wait for Deployment
+        run: |
+          echo "⏳ Waiting for deployment to be ready..."
+          kubectl rollout status deployment/wiz-todo-app -n wiz --timeout=300s
+          
+          echo "📊 Deployment status:"
+          kubectl get pods -n wiz -l app=wiz-todo-app
+          kubectl get services -n wiz
+          kubectl get ingress -n wiz
+      
+      - name: Run Application Tests
+        run: |
+          echo "🧪 Running application tests..."
+          
+          # Get pod name
+          POD_NAME=$(kubectl get pods -n wiz -l app=wiz-todo-app -o jsonpath='{.items[0].metadata.name}')
+          
+          # Test 1: Verify wizexercise.txt file (REQUIREMENT)
+          echo "📄 Testing wizexercise.txt file requirement:"
+          WIZARD_NAME=$(kubectl exec -n wiz "$POD_NAME" -- cat /app/wizexercise.txt)
+          echo "✅ wizexercise.txt contains: $WIZARD_NAME"
+          
+          # Test 2: Health check
+          echo "🏥 Testing health endpoint:"
+          kubectl exec -n wiz "$POD_NAME" -- wget -qO- http://localhost:3000/health
+          
+          # Test 3: MongoDB connection
+          echo "📊 Testing MongoDB connection:"
+          kubectl exec -n wiz "$POD_NAME" -- wget -qO- http://localhost:3000/api/info
+          
+          # Test 4: Create todo with wizexercise.txt content (FULL CYCLE TEST)
+          echo "📝 Creating todo with wizexercise.txt content:"
+          kubectl exec -n wiz "$POD_NAME" -- wget -qO- \
+            --post-data="{\"task\":\"Wiz demo completed by $WIZARD_NAME\",\"user\":\"$WIZARD_NAME\"}" \
+            --header='Content-Type: application/json' \
+            http://localhost:3000/api/todos
+          
+          # Test 5: Verify data in database
+          echo "📋 Verifying data in MongoDB:"
+          kubectl exec -n wiz "$POD_NAME" -- wget -qO- http://localhost:3000/api/todos | grep "$WIZARD_NAME"
+          
+          echo "✅ All application tests passed!"
+      
+      - name: Test Kubernetes Admin Privileges (VULNERABILITY DEMO)
+        run: |
+          echo "🔒 Testing cluster-admin privileges (intentional vulnerability):"
+          kubectl auth can-i --list --as=system:serviceaccount:wiz:wiz-todo-app-sa | head -10
+          echo "⚠️  Service account has cluster-admin privileges (security issue for demo)"
+      
+      - name: Show ALB Endpoint
+        run: |
+          echo "⏳ Waiting for ALB to be provisioned..."
+          sleep 60
+          
+          ALB_DNS=$(kubectl get ingress wiz-todo-ingress -n wiz -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "pending")
+          
+          if [ "$ALB_DNS" != "pending" ] && [ -n "$ALB_DNS" ]; then
+            echo "🌐 Application URL: http://$ALB_DNS"
+            echo "🧪 Test the application:"
+            echo "  curl http://$ALB_DNS/health"
+            echo "  curl http://$ALB_DNS/api/info"
+          else
+            echo "⏳ ALB still provisioning. Check later with:"
+            echo "  kubectl get ingress wiz-todo-ingress -n wiz"
+          fi
+      
+      - name: Deployment Summary
+        run: |
+          echo "🎉 Container Build & Deployment Complete!"
+          echo ""
+          echo "📊 Deployed Resources:"
+          echo "  - Container Image: $IMAGE_URI"
+          echo "  - EKS Cluster: $CLUSTER_NAME"
+          echo "  - MongoDB IP: $MONGO_IP"
+          echo ""
+          echo "🧪 Verification Commands:"
+          echo "  kubectl get pods -n wiz"
+          echo "  kubectl get ingress -n wiz"
+          echo "  kubectl exec -n wiz \$(kubectl get pods -n wiz -l app=wiz-todo-app -o jsonpath='{.items[0].metadata.name}') -- cat /app/wizexercise.txt"

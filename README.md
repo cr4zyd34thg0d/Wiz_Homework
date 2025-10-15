@@ -279,7 +279,22 @@ aws iam get-role-policy --role-name wiz-exercise-dev-mongodb-vm-role \
     └── ingress.yaml         # Load balancer
 ```
 
-## Demo Commands for Interview
+## 🎯 Demo Scripts for Interview
+
+### Comprehensive Testing and Demonstration
+```bash
+# 1. Run infrastructure validation tests
+./scripts/test-infrastructure.sh
+
+# 2. Demonstrate kubectl capabilities  
+./scripts/kubectl-demo.sh
+
+# 3. Show security controls and vulnerabilities
+./scripts/demo-security-controls.sh
+
+# 4. Deploy application (if needed)
+./scripts/deploy-app.sh
+```
 
 ### Show Application Working
 ```bash
@@ -355,14 +370,23 @@ terraform destroy
 aws ec2 describe-instances --filters "Name=tag:Project,Values=wiz-exercise-v4"
 ```
 
+## 📋 Available Scripts
+
+| Script | Purpose | Usage |
+|--------|---------|-------|
+| `scripts/deploy-app.sh` | Deploy application to EKS | `./scripts/deploy-app.sh` |
+| `scripts/test-infrastructure.sh` | Validate all infrastructure | `./scripts/test-infrastructure.sh` |
+| `scripts/kubectl-demo.sh` | Demonstrate kubectl commands | `./scripts/kubectl-demo.sh` |
+| `scripts/demo-security-controls.sh` | Show security controls | `./scripts/demo-security-controls.sh` |
+
 ## Troubleshooting
 ```bash
 # Check if everything is working
-./scripts/test-deployment.sh
+./scripts/test-infrastructure.sh
 
 # Common fixes
-kubectl get pods                    # Check pod status
-kubectl logs -l app=wiz-todo-app   # Check application logs
+kubectl get pods -n wiz             # Check pod status
+kubectl logs -n wiz -l app=wiz-todo-app   # Check application logs
 aws sts get-caller-identity        # Verify AWS credentials
 ```
 

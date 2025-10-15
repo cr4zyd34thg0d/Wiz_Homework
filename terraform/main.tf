@@ -2,6 +2,13 @@
 # Creates intentional vulnerabilities for security demonstration
 
 terraform {
+  required_version = ">= 1.6.0"
+  
+  backend "s3" {
+    # Backend configuration will be provided via -backend-config flags
+    # or backend.conf file to avoid hardcoding values
+  }
+  
   required_providers {
     aws = {
       source  = "hashicorp/aws"
@@ -47,7 +54,11 @@ resource "aws_subnet" "public" {
   cidr_block              = "10.0.${count.index + 1}.0/24"
   availability_zone       = data.aws_availability_zones.available.names[count.index]
   map_public_ip_on_launch = true
-  tags = { Name = "${local.name_prefix}-public-${count.index + 1}" }
+  tags = { 
+    Name = "${local.name_prefix}-public-${count.index + 1}"
+    "kubernetes.io/role/elb" = "1"
+    "kubernetes.io/cluster/${local.name_prefix}" = "shared"
+  }
 }
 
 # Private subnets for EKS (REQUIRED)
@@ -56,7 +67,11 @@ resource "aws_subnet" "private" {
   vpc_id            = aws_vpc.main.id
   cidr_block        = "10.0.${count.index + 10}.0/24"
   availability_zone = data.aws_availability_zones.available.names[count.index]
-  tags = { Name = "${local.name_prefix}-private-${count.index + 1}" }
+  tags = { 
+    Name = "${local.name_prefix}-private-${count.index + 1}"
+    "kubernetes.io/role/internal-elb" = "1"
+    "kubernetes.io/cluster/${local.name_prefix}" = "shared"
+  }
 }
 
 # NAT Gateway for private subnets
@@ -118,12 +133,12 @@ resource "aws_security_group" "mongodb_vm" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # MongoDB port (allow from broader range for demo)
+  # MongoDB port (allow from VPC CIDR only)
   ingress {
     from_port   = 27017
     to_port     = 27017
     protocol    = "tcp"
-    cidr_blocks = ["10.0.0.0/8"]
+    cidr_blocks = [var.vpc_cidr]
   }
 
   egress {
@@ -234,19 +249,31 @@ resource "aws_instance" "mongodb" {
 
   user_data = base64encode(<<-EOF
 #!/bin/bash
-apt-get update
-# Install MongoDB (simple version for demo)
-apt-get install -y mongodb
+set -euxo pipefail
 
-# Start MongoDB (simple setup)
-systemctl start mongodb
-systemctl enable mongodb
+# Update system
+apt-get update -y
+apt-get install -y gnupg curl jq awscli
+
+# Install MongoDB 4.4 (EOL Feb 2024 - still vulnerable but more reliable)
+wget -qO - https://www.mongodb.org/static/pgp/server-4.4.asc | apt-key add -
+echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu focal/mongodb-org/4.4 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-4.4.list
+apt-get update -y
+DEBIAN_FRONTEND=noninteractive apt-get install -y mongodb-org
+
+# Configure MongoDB for VPC access
+sed -i 's/^  bindIp: .*/  bindIp: 0.0.0.0/' /etc/mongod.conf || true
+systemctl enable mongod
+systemctl restart mongod
 
 # Wait for MongoDB to start
 sleep 10
 
-# Create simple database (no auth for demo simplicity)
-mongo << 'MONGOJS'
+# Create admin user with authentication
+mongo --eval 'db.getSiblingDB("admin").createUser({user:"wiz",pwd:"Wiz!2024",roles:[{role:"root",db:"admin"}]})' || true
+
+# Create application database and seed data
+mongo --username wiz --password "Wiz!2024" --authenticationDatabase admin << 'MONGOJS'
 use todoapp
 db.todos.insertMany([
   {"task": "Review security policies", "completed": false, "user": "admin"},
@@ -260,25 +287,26 @@ db.users.insertMany([
 ])
 MONGOJS
 
-# Install AWS CLI
-apt-get install -y awscli
-
-# Daily backup script with authentication
+# Create backup script
 cat > /opt/mongodb-backup.sh << 'SCRIPT'
 #!/bin/bash
-DATE=$(date +%Y-%m-%d)
-mongodump --host localhost --port 27017 --username admin --password password123 --authenticationDatabase admin --db todoapp --out /tmp/backup-$DATE
-tar -czf /tmp/backup-$DATE.tar.gz -C /tmp backup-$DATE
-aws s3 cp /tmp/backup-$DATE.tar.gz s3://${aws_s3_bucket.backup.bucket}/mongodb-backups/
-rm -rf /tmp/backup-$DATE*
+set -e
+TS=$(date +%F-%H%M%S)
+mkdir -p /var/backups/mongodumps
+mongodump --host localhost --port 27017 --username wiz --password "Wiz!2024" --authenticationDatabase admin --db todoapp --archive=/var/backups/mongodumps/backup-$TS.gz --gzip
+aws s3 cp /var/backups/mongodumps/backup-$TS.gz s3://${aws_s3_bucket.backup.bucket}/mongodb-backups/backup-$TS.gz
+rm -f /var/backups/mongodumps/backup-$TS.gz
 SCRIPT
 chmod +x /opt/mongodb-backup.sh
 
 # Run initial backup
-/opt/mongodb-backup.sh
+/opt/mongodb-backup.sh || true
 
-# Schedule daily backups
+# Schedule daily backups at 2 AM
 echo "0 2 * * * root /opt/mongodb-backup.sh" >> /etc/crontab
+
+# Log completion
+echo "MongoDB 4.0 installation and configuration completed" >> /var/log/mongodb-setup.log
 EOF
   )
 
@@ -329,7 +357,8 @@ resource "aws_eks_cluster" "main" {
 
   # Enable cluster access for root user
   access_config {
-    authentication_mode = "CONFIG_MAP"
+    authentication_mode                         = "API_AND_CONFIG_MAP"
+    bootstrap_cluster_creator_admin_permissions = true
   }
 
   depends_on = [aws_iam_role_policy_attachment.eks_cluster_policy]
@@ -337,18 +366,40 @@ resource "aws_eks_cluster" "main" {
 
 # Add CloudLabs user access to EKS cluster
 resource "aws_eks_access_entry" "cloudlabs_user" {
-  cluster_name      = aws_eks_cluster.main.name
-  principal_arn     = "arn:aws:iam::491085396284:user/odl_user_1918962"
-  kubernetes_groups = ["system:masters"]
-  type             = "STANDARD"
+  cluster_name  = aws_eks_cluster.main.name
+  principal_arn = "arn:aws:iam::491085396284:user/odl_user_1918962"
+  type          = "STANDARD"
+}
+
+resource "aws_eks_access_policy_association" "cloudlabs_user_admin" {
+  cluster_name  = aws_eks_cluster.main.name
+  principal_arn = "arn:aws:iam::491085396284:user/odl_user_1918962"
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+  
+  access_scope {
+    type = "cluster"
+  }
+  
+  depends_on = [aws_eks_access_entry.cloudlabs_user]
 }
 
 # Also add root account access as backup
 resource "aws_eks_access_entry" "root_user" {
-  cluster_name      = aws_eks_cluster.main.name
-  principal_arn     = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
-  kubernetes_groups = ["system:masters"]
-  type             = "STANDARD"
+  cluster_name  = aws_eks_cluster.main.name
+  principal_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+  type          = "STANDARD"
+}
+
+resource "aws_eks_access_policy_association" "root_user_admin" {
+  cluster_name  = aws_eks_cluster.main.name
+  principal_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+  
+  access_scope {
+    type = "cluster"
+  }
+  
+  depends_on = [aws_eks_access_entry.root_user]
 }
 
 # ECR Repository for container images
@@ -525,6 +576,43 @@ resource "aws_config_config_rule" "cloudtrail_enabled" {
   }
 }
 
+# Config rule to detect SSH open to world (DETECTIVE CONTROL)
+resource "aws_config_config_rule" "incoming_ssh_disabled" {
+  name = "${local.name_prefix}-incoming-ssh-disabled"
+  source {
+    owner             = "AWS"
+    source_identifier = "INCOMING_SSH_DISABLED"
+  }
+}
+
+# IAM Permission Boundary (PREVENTATIVE CONTROL)
+resource "aws_iam_policy" "permission_boundary" {
+  name        = "${local.name_prefix}-permission-boundary"
+  description = "Permission boundary that prevents VPC deletion"
+  
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = "*"
+        Resource = "*"
+      },
+      {
+        Effect = "Deny"
+        Action = [
+          "ec2:DeleteVpc",
+          "ec2:DeleteSubnet",
+          "ec2:DeleteInternetGateway",
+          "ec2:DeleteNatGateway",
+          "ec2:DeleteRouteTable"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
 # Load balancing will be handled by Kubernetes LoadBalancer service
 # This creates a Classic ELB automatically when you run:
 # kubectl create service loadbalancer wiz-todo-app --tcp=80:3000
@@ -550,6 +638,10 @@ data "aws_availability_zones" "available" {
 # Outputs
 output "mongodb_public_ip" {
   value = aws_instance.mongodb.public_ip
+}
+
+output "mongodb_private_ip" {
+  value = aws_instance.mongodb.private_ip
 }
 
 output "backup_bucket_name" {
