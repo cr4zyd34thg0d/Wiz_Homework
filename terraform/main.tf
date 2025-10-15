@@ -118,12 +118,12 @@ resource "aws_security_group" "mongodb_vm" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # MongoDB port
+  # MongoDB port (allow from broader range for demo)
   ingress {
     from_port   = 27017
     to_port     = 27017
     protocol    = "tcp"
-    cidr_blocks = ["10.0.0.0/16"]
+    cidr_blocks = ["10.0.0.0/8"]
   }
 
   egress {
@@ -235,58 +235,19 @@ resource "aws_instance" "mongodb" {
   user_data = base64encode(<<-EOF
 #!/bin/bash
 apt-get update
-# Install MongoDB 4.4 (outdated)
-wget -qO - https://www.mongodb.org/static/pgp/server-4.4.asc | apt-key add -
-echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu focal/mongodb-org/4.4 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-4.4.list
-apt-get update
-apt-get install -y mongodb-org=4.4.18
+# Install MongoDB (simple version for demo)
+apt-get install -y mongodb
 
-# Configure MongoDB with authentication
-cat > /etc/mongod.conf << 'MONGOCONF'
-storage:
-  dbPath: /var/lib/mongodb
-  journal:
-    enabled: true
-
-systemLog:
-  destination: file
-  logAppend: true
-  path: /var/log/mongodb/mongod.log
-
-net:
-  port: 27017
-  bindIp: 0.0.0.0
-
-processManagement:
-  fork: true
-  pidFilePath: /var/run/mongodb/mongod.pid
-
-security:
-  authorization: enabled
-MONGOCONF
-
-systemctl start mongod
-systemctl enable mongod
+# Start MongoDB (simple setup)
+systemctl start mongodb
+systemctl enable mongodb
 
 # Wait for MongoDB to start
 sleep 10
 
-# Create admin user and todoapp database
+# Create simple database (no auth for demo simplicity)
 mongo << 'MONGOJS'
-use admin
-db.createUser({
-  user: "admin",
-  pwd: "password123",
-  roles: [ { role: "userAdminAnyDatabase", db: "admin" }, "readWriteAnyDatabase" ]
-})
-
 use todoapp
-db.createUser({
-  user: "todoapp",
-  pwd: "todopass",
-  roles: [ { role: "readWrite", db: "todoapp" } ]
-})
-
 db.todos.insertMany([
   {"task": "Review security policies", "completed": false, "user": "admin"},
   {"task": "Update database passwords", "completed": false, "user": "admin"},
