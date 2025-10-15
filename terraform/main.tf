@@ -22,8 +22,15 @@ provider "aws" {
   region = var.aws_region
 }
 
+# Random suffix to avoid resource name conflicts
+resource "random_string" "suffix" {
+  length  = 6
+  special = false
+  upper   = false
+}
+
 locals {
-  name_prefix = "wiz-exercise-${var.environment}"
+  name_prefix = "wiz-exercise-${var.environment}-${random_string.suffix.result}"
 }
 
 # VPC
