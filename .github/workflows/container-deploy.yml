@@ -8,7 +8,7 @@ on:
         required: false
         default: "auto-detect"
       cluster_name:
-        description: "EKS Cluster Name (from infrastructure pipeline)"  
+        description: "EKS Cluster Name (from infrastructure pipeline)"
         required: false
         default: "auto-detect"
   # Removed automatic triggers - manual only for interview control
@@ -174,15 +174,14 @@ jobs:
           # Create working copies of manifests
           cp -r k8s /tmp/k8s-deploy
 
-          # Force the correct MongoDB IP
-          echo "Using MongoDB IP: 10.0.1.87 (hardcoded for reliability)"
-          sed -i "s/MONGO_PRIVATE_IP/10.0.1.87/g" /tmp/k8s-deploy/03-configmap.yaml
-          
-          # Verify the replacement worked
-          echo "ConfigMap after replacement:"
+          # ConfigMap already has hardcoded MongoDB IP: 10.0.1.87
+          echo "Using hardcoded MongoDB IP: 10.0.1.87"
+
+          # Verify the ConfigMap has correct IP
+          echo "ConfigMap MongoDB URL:"
           grep MONGO_URL /tmp/k8s-deploy/03-configmap.yaml
-          
-          # Also force update any existing ConfigMap in cluster
+
+          # Delete existing ConfigMap to force refresh
           echo "Deleting existing ConfigMap to force refresh..."
           kubectl delete configmap wiz-todo-config -n wiz --ignore-not-found=true
 
@@ -199,7 +198,7 @@ jobs:
           kubectl apply -f /tmp/k8s-deploy/06-ingress.yaml
 
           echo "Kubernetes manifests applied"
-          
+
           # Force restart deployment to pick up new ConfigMap
           echo "Restarting deployment to pick up new ConfigMap..."
           kubectl rollout restart deployment/wiz-todo-app -n wiz
@@ -253,21 +252,21 @@ jobs:
           kubectl auth can-i --list --as=system:serviceaccount:wiz:wiz-todo-app-sa | head -10
           echo "WARNING: Service account has cluster-admin privileges (security issue for demo)"
 
-      - name: Show ALB Endpoint
+      - name: Show Load Balancer Endpoint
         run: |
-          echo "Waiting for ALB to be provisioned..."
-          sleep 60
+          echo "Getting Classic ELB endpoint..."
+          sleep 30
 
-          ALB_DNS=$(kubectl get ingress wiz-todo-ingress -n wiz -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "pending")
+          ELB_DNS=$(kubectl get service wiz-todo-service -n wiz -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "pending")
 
-          if [ "$ALB_DNS" != "pending" ] && [ -n "$ALB_DNS" ]; then
-            echo "Application URL: http://$ALB_DNS"
+          if [ "$ELB_DNS" != "pending" ] && [ -n "$ELB_DNS" ]; then
+            echo "Application URL: http://$ELB_DNS"
             echo "Test the application:"
-            echo "  curl http://$ALB_DNS/health"
-            echo "  curl http://$ALB_DNS/api/info"
+            echo "  curl http://$ELB_DNS/health"
+            echo "  curl http://$ELB_DNS/api/info"
           else
-            echo "ALB still provisioning. Check later with:"
-            echo "  kubectl get ingress wiz-todo-ingress -n wiz"
+            echo "ELB still provisioning. Check later with:"
+            echo "  kubectl get service wiz-todo-service -n wiz"
           fi
 
       - name: Deployment Summary
