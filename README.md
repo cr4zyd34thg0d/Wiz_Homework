@@ -13,15 +13,9 @@ I set up a bunch of intentional security issues that are pretty common:
 
 Kept it cheap - runs about $4/day in my AWS account.
 
-## What Gets Built
+## Architecture Overview
 
-```
-Internet → Load Balancer → EKS Cluster → MongoDB VM
-                          (app pods)    (old & exposed)
-                              ↓
-                          S3 Bucket
-                         (public read)
-```
+![Architecture Overview](docs/architecture-overview.png)
 
 Pretty simple setup - web app in Kubernetes talks to MongoDB, backs up to S3. Everything has security issues on purpose.
 
