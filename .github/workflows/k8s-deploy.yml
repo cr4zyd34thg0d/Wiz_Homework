@@ -112,7 +112,7 @@ jobs:
           MONGODB_IP=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=*mongodb*" "Name=instance-state-name,Values=running" --query 'Reservations[*].Instances[*].PublicIpAddress' --output text 2>/dev/null || echo "disabled")
           if [ "$MONGODB_IP" != "disabled" ] && [ -n "$MONGODB_IP" ]; then
             echo "Found MongoDB IP: $MONGODB_IP"
-            sed -i "s|MONGODB_HOST.*|MONGODB_HOST\": \"$MONGODB_IP\"|g" k8s/app/deployment.yaml
+            sed -i "s|value: \"disabled\"|value: \"$MONGODB_IP\"|g" k8s/app/deployment.yaml
           else
             echo "MongoDB not found or disabled - app will run without database"
           fi
