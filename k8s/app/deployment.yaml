@@ -59,7 +59,7 @@ spec:
         - name: PORT
           value: "3000"
         - name: MONGODB_HOST
-          value: "MONGODB_VM_IP_PLACEHOLDER"
+          value: "disabled"
         - name: MONGODB_PORT
           value: "27017"
         - name: MONGODB_USER

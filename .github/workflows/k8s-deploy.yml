@@ -108,6 +108,15 @@ jobs:
           # Update deployment with new image
           sed -i "s|image: .*|image: $IMAGE_URI|g" k8s/app/deployment.yaml
           
+          # Update MongoDB IP if available (optional - app works without it)
+          MONGODB_IP=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=*mongodb*" "Name=instance-state-name,Values=running" --query 'Reservations[*].Instances[*].PublicIpAddress' --output text 2>/dev/null || echo "disabled")
+          if [ "$MONGODB_IP" != "disabled" ] && [ -n "$MONGODB_IP" ]; then
+            echo "Found MongoDB IP: $MONGODB_IP"
+            sed -i "s|MONGODB_HOST.*|MONGODB_HOST\": \"$MONGODB_IP\"|g" k8s/app/deployment.yaml
+          else
+            echo "MongoDB not found or disabled - app will run without database"
+          fi
+          
           # Update ingress with actual subnet IDs
           SUBNET_IDS=$(aws ec2 describe-subnets --filters "Name=tag:Name,Values=*wiz-exercise*public*" --query 'Subnets[*].SubnetId' --output text | tr '\t' ',')
           sed -i "s|alb.ingress.kubernetes.io/subnets: .*|alb.ingress.kubernetes.io/subnets: $SUBNET_IDS|g" k8s/app/ingress.yaml
