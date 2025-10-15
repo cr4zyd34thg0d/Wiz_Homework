@@ -36,6 +36,18 @@ jobs:
         working-directory: terraform
         run: terraform init
       
+      - name: Empty S3 Buckets First
+        run: |
+          echo "🗑️ Emptying S3 buckets before destroy..."
+          
+          # List and empty buckets with our project prefix
+          for bucket in $(aws s3api list-buckets --query "Buckets[?contains(Name, 'wiz-exercise-dev')].Name" --output text); do
+            if [ ! -z "$bucket" ]; then
+              echo "Emptying bucket: $bucket"
+              aws s3 rm s3://$bucket --recursive || echo "Could not empty $bucket"
+            fi
+          done
+      
       - name: Terraform Destroy
         working-directory: terraform
         run: |

@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       destroy_first:
-        description: 'Destroy existing resources first (true/false)'
+        description: "Destroy existing resources first (true/false)"
         required: false
-        default: 'false'
+        default: "false"
   # Removed automatic triggers - manual only for interview control
 
 permissions:
@@ -18,36 +18,37 @@ jobs:
     runs-on: ubuntu-latest
     env:
       AWS_REGION: ${{ secrets.AWS_REGION }}
-    
+
     outputs:
       mongodb_ip: ${{ steps.tf-outputs.outputs.mongodb_ip }}
       cluster_name: ${{ steps.tf-outputs.outputs.cluster_name }}
       backup_bucket: ${{ steps.tf-outputs.outputs.backup_bucket }}
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
-      - name: Configure AWS credentials (OIDC)
+
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
-      
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_wrapper: false
-      
+
       - name: Bootstrap Terraform state backend
         run: |
           set -e
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           BUCKET="wiz-tf-state-${ACCOUNT_ID}"
           TABLE="wiz-tf-lock"
-          
+
           echo "🚀 Bootstrapping Terraform state backend..."
-          
+
           # Create S3 bucket (idempotent)
           aws s3api head-bucket --bucket "$BUCKET" 2>/dev/null || {
             if [ "$AWS_REGION" = "us-east-1" ]; then
@@ -57,13 +58,13 @@ jobs:
             fi
             echo "✅ Created S3 bucket: $BUCKET"
           }
-          
+
           # Enable versioning and encryption
           aws s3api put-bucket-versioning --bucket "$BUCKET" --versioning-configuration Status=Enabled
           aws s3api put-bucket-encryption --bucket "$BUCKET" --server-side-encryption-configuration '{
             "Rules": [{"ApplyServerSideEncryptionByDefault": {"SSEAlgorithm": "AES256"}}]
           }'
-          
+
           # Create DynamoDB table (idempotent)
           aws dynamodb describe-table --table-name "$TABLE" 2>/dev/null || {
             aws dynamodb create-table \
@@ -74,10 +75,10 @@ jobs:
             aws dynamodb wait table-exists --table-name "$TABLE"
             echo "✅ Created DynamoDB table: $TABLE"
           }
-          
+
           # Update backend config
           sed -i "s/wiz-tf-state-ACCOUNT_ID/wiz-tf-state-${ACCOUNT_ID}/g" terraform/backend.conf
-      
+
       - name: TfSec Infrastructure Security Scan
         continue-on-error: true
         uses: aquasecurity/tfsec-action@v1.0.3
@@ -85,39 +86,39 @@ jobs:
           working_directory: terraform
           format: sarif
           output: tfsec-results.sarif
-      
+
       - name: Upload TfSec results
         uses: github/codeql-action/upload-sarif@v3
         if: always() && hashFiles('tfsec-results.sarif') != ''
         continue-on-error: true
         with:
           sarif_file: tfsec-results.sarif
-      
+
       - name: Terraform Init
         working-directory: terraform
         run: |
           echo "🔧 Initializing Terraform..."
           terraform init -backend-config=backend.conf
-      
+
       - name: Terraform Validate
         working-directory: terraform
         run: |
           echo "✅ Validating Terraform configuration..."
           terraform validate
-      
+
       - name: Terraform Plan
         working-directory: terraform
         run: |
           echo "📋 Creating Terraform plan..."
           terraform plan -var="aws_region=$AWS_REGION" -out=tfplan
-      
+
       - name: Terraform Apply
         working-directory: terraform
         run: |
           echo "🚀 Applying Terraform infrastructure..."
           terraform apply -auto-approve tfplan
         continue-on-error: false
-      
+
       - name: Get Infrastructure Outputs
         id: tf-outputs
         working-directory: terraform
@@ -126,45 +127,58 @@ jobs:
           MONGO_IP=$(terraform output -raw mongodb_private_ip)
           CLUSTER_NAME=$(terraform output -raw eks_cluster_name)
           BACKUP_BUCKET=$(terraform output -raw backup_bucket_name)
-          
+
           echo "mongodb_ip=$MONGO_IP" >> $GITHUB_OUTPUT
           echo "cluster_name=$CLUSTER_NAME" >> $GITHUB_OUTPUT
           echo "backup_bucket=$BACKUP_BUCKET" >> $GITHUB_OUTPUT
-          
+
           echo "✅ Infrastructure deployed successfully!"
           echo "  MongoDB IP: $MONGO_IP"
           echo "  EKS Cluster: $CLUSTER_NAME"
           echo "  Backup Bucket: $BACKUP_BUCKET"
-      
+
       - name: Rollback on Failure
         if: failure()
         working-directory: terraform
         run: |
           echo "❌ Deployment failed! Attempting rollback..."
+
+          # First, try to empty any S3 buckets that might have been created
+          echo "🗑️ Emptying S3 buckets before destroy..."
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+
+          # List and empty buckets with our project prefix
+          for bucket in $(aws s3api list-buckets --query "Buckets[?contains(Name, 'wiz-exercise-dev')].Name" --output text); do
+            if [ ! -z "$bucket" ]; then
+              echo "Emptying bucket: $bucket"
+              aws s3 rm s3://$bucket --recursive || echo "Could not empty $bucket"
+            fi
+          done
+
           echo "🗑️ Running terraform destroy to clean up partial deployment..."
           terraform destroy -auto-approve -var="aws_region=$AWS_REGION" || echo "⚠️ Rollback failed - manual cleanup may be required"
           echo "📧 Check GitHub Actions logs and AWS console for any remaining resources"
-      
+
       - name: Install AWS Load Balancer Controller
         run: |
           echo "🚀 Installing AWS Load Balancer Controller..."
-          
+
           # Configure kubectl
           aws eks update-kubeconfig --region $AWS_REGION --name ${{ steps.tf-outputs.outputs.cluster_name }}
-          
+
           # Download IAM policy
           curl -o iam_policy.json https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.7.2/docs/install/iam_policy.json
-          
+
           # Create IAM policy (idempotent)
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           aws iam create-policy \
             --policy-name AWSLoadBalancerControllerIAMPolicy \
             --policy-document file://iam_policy.json 2>/dev/null || echo "Policy exists"
-          
+
           # Install eksctl
           curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
           sudo mv /tmp/eksctl /usr/local/bin
-          
+
           # Create service account with IAM role
           eksctl create iamserviceaccount \
             --cluster=${{ steps.tf-outputs.outputs.cluster_name }} \
@@ -174,10 +188,10 @@ jobs:
             --attach-policy-arn=arn:aws:iam::$ACCOUNT_ID:policy/AWSLoadBalancerControllerIAMPolicy \
             --approve \
             --override-existing-serviceaccounts
-          
+
           # Install Helm
           curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-          
+
           # Add EKS Helm repository and install controller
           helm repo add eks https://aws.github.io/eks-charts
           helm repo update
@@ -186,8 +200,8 @@ jobs:
             --set clusterName=${{ steps.tf-outputs.outputs.cluster_name }} \
             --set serviceAccount.create=false \
             --set serviceAccount.name=aws-load-balancer-controller
-          
+
           # Wait for controller to be ready
           kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=aws-load-balancer-controller -n kube-system --timeout=300s
-          
+
           echo "✅ AWS Load Balancer Controller installed successfully!"
