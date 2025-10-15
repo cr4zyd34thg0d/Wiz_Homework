@@ -160,3 +160,35 @@ Internet → Classic ELB → EKS Pods → MongoDB VM
 - **Network Segmentation**: EKS in private subnets
 - **IAM Permission Boundary**: Prevents VPC deletion
 - **Infrastructure as Code**: Consistent, versioned deployments
+## Demo Commands
+
+```bash
+# 1. Check deployment status
+kubectl get all -n wiz
+
+# 2. Verify wizexercise.txt requirement
+POD_NAME=$(kubectl get pods -n wiz -l app=wiz-todo-app -o jsonpath='{.items[0].metadata.name}')
+kubectl exec -n wiz $POD_NAME -- cat /app/wizexercise.txt
+# Output: "Devon Diffie"
+
+# 3. Test app connectivity
+kubectl exec -n wiz $POD_NAME -- wget -qO- http://localhost:3000/health
+kubectl exec -n wiz $POD_NAME -- wget -qO- http://localhost:3000/api/info
+
+# 4. Show public S3 bucket vulnerability
+BUCKET_NAME=$(cd terraform && terraform output -raw backup_bucket_name)
+aws s3 ls s3://$BUCKET_NAME --no-sign-request
+
+# 5. Check Kubernetes over-privileges
+kubectl auth can-i --list --as=system:serviceaccount:wiz:wiz-todo-app-sa | head -10
+
+# 6. Get external application URL
+ELB_URL=$(kubectl get service wiz-todo-service -n wiz -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+echo "External URL: http://$ELB_URL"
+curl "http://$ELB_URL/health"
+
+# 7. Test MongoDB connection (should show connected: true)
+curl "http://$ELB_URL/api/info"
+```
+
+This demonstrates real security issues that Wiz would detect in a production environment.

@@ -86,13 +86,23 @@ aws eks update-kubeconfig --region us-east-1 --name wiz-exercise-dev
 ## For the Demo
 
 ```bash
+# Check that everything is running
+kubectl get pods -n wiz
+kubectl get services -n wiz
+
 # Check that wizexercise.txt is there
-POD_NAME=$(kubectl get pods -l app=wiz-todo-app -o jsonpath='{.items[0].metadata.name}')
-kubectl exec $POD_NAME -- cat /app/wizexercise.txt
+POD_NAME=$(kubectl get pods -n wiz -l app=wiz-todo-app -o jsonpath='{.items[0].metadata.name}')
+kubectl exec -n wiz $POD_NAME -- cat /app/wizexercise.txt
 # Shows: "Devon Diffie"
 
-# Get the app URL
-kubectl get service wiz-todo-service -n wiz
+# Test the app endpoints
+kubectl exec -n wiz $POD_NAME -- wget -qO- http://localhost:3000/health
+kubectl exec -n wiz $POD_NAME -- wget -qO- http://localhost:3000/api/info
+
+# Get the external URL
+ELB_URL=$(kubectl get service wiz-todo-service -n wiz -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+echo "App URL: http://$ELB_URL"
+curl "http://$ELB_URL/health"
 ```
 
 ## Cleanup
