@@ -584,8 +584,7 @@ data "aws_availability_zones" "available" {
   state = "available"
 }
 
-# Get current AWS account and user info
-data "aws_caller_identity" "current" {}
+# AWS account info already defined above
 
 # Outputs
 output "mongodb_public_ip" {
