@@ -365,24 +365,8 @@ resource "aws_eks_cluster" "main" {
   depends_on = [aws_iam_role_policy_attachment.eks_cluster_policy]
 }
 
-# Add CloudLabs user access to EKS cluster
-resource "aws_eks_access_entry" "cloudlabs_user" {
-  cluster_name  = aws_eks_cluster.main.name
-  principal_arn = "arn:aws:iam::491085396284:user/odl_user_1918962"
-  type          = "STANDARD"
-}
-
-resource "aws_eks_access_policy_association" "cloudlabs_user_admin" {
-  cluster_name  = aws_eks_cluster.main.name
-  principal_arn = "arn:aws:iam::491085396284:user/odl_user_1918962"
-  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
-  
-  access_scope {
-    type = "cluster"
-  }
-  
-  depends_on = [aws_eks_access_entry.cloudlabs_user]
-}
+# CloudLabs user access is already configured in the environment
+# Removing to avoid conflicts with existing access entries
 
 # Also add root account access as backup
 resource "aws_eks_access_entry" "root_user" {
