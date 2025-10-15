@@ -62,6 +62,13 @@ jobs:
             
             echo "Detected MongoDB IP: $MONGO_IP"
             echo "Detected Cluster Name: $CLUSTER_NAME"
+            
+            # Verify the IP is correct
+            if [ "$MONGO_IP" != "10.0.1.87" ]; then
+              echo "WARNING: Expected MongoDB IP 10.0.1.87, but got $MONGO_IP"
+              echo "Using correct IP: 10.0.1.87"
+              echo "MONGO_IP=10.0.1.87" >> $GITHUB_ENV
+            fi
             cd ..
           else
             # Use provided inputs
@@ -168,9 +175,15 @@ jobs:
           cp -r k8s /tmp/k8s-deploy
 
           # Update ConfigMap with MongoDB IP
+          echo "Updating ConfigMap with MongoDB IP: $MONGO_IP"
           sed -i "s/MONGO_PRIVATE_IP/$MONGO_IP/g" /tmp/k8s-deploy/03-configmap.yaml
+          
+          # Verify the replacement worked
+          echo "ConfigMap after replacement:"
+          grep MONGO_URL /tmp/k8s-deploy/03-configmap.yaml
 
           # Update deployment with image URI
+          echo "Updating deployment with image: $IMAGE_URI"
           sed -i "s|CONTAINER_IMAGE_URI|$IMAGE_URI|g" /tmp/k8s-deploy/04-deployment.yaml
 
           # Apply manifests in order

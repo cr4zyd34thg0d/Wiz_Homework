@@ -8,4 +8,4 @@ metadata:
     component: config
 data:
   # This will be updated with the actual MongoDB private IP during deployment
-  MONGO_URL: "mongodb://wiz:Wiz!2024@10.0.1.83:27017/todoapp?authSource=admin"
+  MONGO_URL: "mongodb://wiz:Wiz!2024@MONGO_PRIVATE_IP:27017/todoapp?authSource=admin"
