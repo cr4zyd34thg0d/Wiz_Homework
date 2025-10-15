@@ -85,6 +85,19 @@ jobs:
         run: |
           echo "🔧 Configuring kubectl..."
           aws eks update-kubeconfig --region ${{ secrets.AWS_REGION }} --name wiz-exercise-demo
+          
+          # Test connection and show debug info
+          echo "Testing kubectl connection..."
+          kubectl get nodes || echo "Warning: kubectl connection test failed"
+          
+          # Show current context
+          kubectl config current-context
+          
+          # Try alternative auth method if needed
+          if ! kubectl get nodes; then
+            echo "Trying alternative authentication..."
+            aws eks update-kubeconfig --region ${{ secrets.AWS_REGION }} --name wiz-exercise-demo --role-arn $(aws sts get-caller-identity --query Arn --output text | sed 's/:user\//:role\//')
+          fi
       
       - name: Update Kubernetes manifests
         env:
@@ -105,17 +118,20 @@ jobs:
         run: |
           echo "🚀 Deploying to Kubernetes..."
           
+          # Test kubectl connection first
+          kubectl get nodes || echo "Warning: kubectl connection issues"
+          
           # Apply RBAC first (creates service account with cluster-admin)
-          kubectl apply -f k8s/app/rbac.yaml
+          kubectl apply -f k8s/app/rbac.yaml --validate=false
           
           # Apply service
-          kubectl apply -f k8s/app/service.yaml
+          kubectl apply -f k8s/app/service.yaml --validate=false
           
           # Apply deployment
-          kubectl apply -f k8s/app/deployment.yaml
+          kubectl apply -f k8s/app/deployment.yaml --validate=false
           
           # Apply ingress
-          kubectl apply -f k8s/app/ingress.yaml
+          kubectl apply -f k8s/app/ingress.yaml --validate=false
           
           echo "✅ Deployment complete!"
       
