@@ -2,7 +2,7 @@
 # This Dockerfile demonstrates common container security issues that tools like Wiz detect
 # Built for educational purposes to show real-world vulnerabilities
 
-FROM node:18-alpine
+FROM node:24-alpine
 
 # 🚨 INTENTIONAL SECURITY VULNERABILITIES FOR DEMONSTRATION:
 # 
