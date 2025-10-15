@@ -368,17 +368,25 @@ resource "aws_eks_cluster" "main" {
 
   # Enable cluster access for root user
   access_config {
-    authentication_mode = "API_AND_CONFIG_MAP"
+    authentication_mode = "CONFIG_MAP"
   }
 
   depends_on = [aws_iam_role_policy_attachment.eks_cluster_policy]
 }
 
-# Add root user access to EKS cluster
+# Add CloudLabs user access to EKS cluster
+resource "aws_eks_access_entry" "cloudlabs_user" {
+  cluster_name      = aws_eks_cluster.main.name
+  principal_arn     = data.aws_caller_identity.current.arn
+  kubernetes_groups = ["system:masters"]
+  type             = "STANDARD"
+}
+
+# Also add root account access as backup
 resource "aws_eks_access_entry" "root_user" {
   cluster_name      = aws_eks_cluster.main.name
   principal_arn     = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
-  kubernetes_groups = ["cluster-admin"]
+  kubernetes_groups = ["system:masters"]
   type             = "STANDARD"
 }
 
@@ -575,6 +583,9 @@ resource "aws_key_pair" "main" {
 data "aws_availability_zones" "available" {
   state = "available"
 }
+
+# Get current AWS account and user info
+data "aws_caller_identity" "current" {}
 
 # Outputs
 output "mongodb_public_ip" {
