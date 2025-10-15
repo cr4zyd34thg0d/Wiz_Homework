@@ -378,7 +378,7 @@ resource "aws_eks_cluster" "main" {
 resource "aws_eks_access_entry" "root_user" {
   cluster_name      = aws_eks_cluster.main.name
   principal_arn     = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
-  kubernetes_groups = ["system:masters"]
+  kubernetes_groups = ["cluster-admin"]
   type             = "STANDARD"
 }
 
@@ -525,44 +525,27 @@ resource "aws_iam_role_policy" "config_s3" {
   })
 }
 
-resource "aws_config_configuration_recorder" "main" {
-  name     = "${local.name_prefix}-config-recorder"
-  role_arn = aws_iam_role.config.arn
-  recording_group {
-    all_supported = true
-    include_global_resource_types = true
-  }
-}
-
-resource "aws_config_configuration_recorder_status" "main" {
-  name       = aws_config_configuration_recorder.main.name
-  is_enabled = true
-  depends_on = [aws_config_delivery_channel.main]
-}
-
-resource "aws_config_delivery_channel" "main" {
-  name           = "${local.name_prefix}-config-delivery"
-  s3_bucket_name = aws_s3_bucket.config.bucket
-}
+# AWS Config is already configured in CloudLabs environment
+# Using existing Config service for compliance monitoring
 
 # Config rule to detect public S3 buckets (DETECTIVE CONTROL)
+# Note: Uses existing AWS Config service in CloudLabs
 resource "aws_config_config_rule" "s3_bucket_public_read_prohibited" {
   name = "${local.name_prefix}-s3-public-read-prohibited"
   source {
     owner             = "AWS"
     source_identifier = "S3_BUCKET_PUBLIC_READ_PROHIBITED"
   }
-  depends_on = [aws_config_configuration_recorder.main]
 }
 
 # Additional Config rules for compliance monitoring
+# Note: Uses existing AWS Config service in CloudLabs
 resource "aws_config_config_rule" "s3_bucket_ssl_requests_only" {
   name = "${local.name_prefix}-s3-ssl-requests-only"
   source {
     owner             = "AWS"
     source_identifier = "S3_BUCKET_SSL_REQUESTS_ONLY"
   }
-  depends_on = [aws_config_configuration_recorder.main]
 }
 
 resource "aws_config_config_rule" "cloudtrail_enabled" {
@@ -571,7 +554,6 @@ resource "aws_config_config_rule" "cloudtrail_enabled" {
     owner             = "AWS"
     source_identifier = "CLOUD_TRAIL_ENABLED"
   }
-  depends_on = [aws_config_configuration_recorder.main]
 }
 
 # Load balancing will be handled by Kubernetes LoadBalancer service

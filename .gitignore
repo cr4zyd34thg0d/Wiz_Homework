@@ -37,9 +37,12 @@ aws/
 debug-*.sh
 cleanup-*.sh
 *-temp.md
+test-deployment.sh
 
 # Interview preparation materials (private)
 .interview-prep/
+SECURITY_CONTROLS.md
+architecture-diagram.drawio
 
 # Any accidentally created command files
 *subnet*
