@@ -377,7 +377,7 @@ resource "aws_eks_cluster" "main" {
 # Add CloudLabs user access to EKS cluster
 resource "aws_eks_access_entry" "cloudlabs_user" {
   cluster_name      = aws_eks_cluster.main.name
-  principal_arn     = data.aws_caller_identity.current.arn
+  principal_arn     = "arn:aws:iam::491085396284:user/odl_user_1918962"
   kubernetes_groups = ["system:masters"]
   type             = "STANDARD"
 }
