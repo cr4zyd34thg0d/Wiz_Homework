@@ -600,9 +600,6 @@ resource "aws_iam_policy" "permission_boundary" {
   })
 }
 
-# Load balancing will be handled by Kubernetes LoadBalancer service
-# This creates a Classic ELB automatically when you run:
-# kubectl create service loadbalancer wiz-todo-app --tcp=80:3000
 
 # Create SSH key pair for MongoDB VM (Demo purposes)
 resource "tls_private_key" "main" {
@@ -650,4 +647,3 @@ output "ssh_private_key" {
 }
 
 # Load balancer will be created by Kubernetes LoadBalancer service
-# No ALB outputs needed - ELB DNS will be available via kubectl

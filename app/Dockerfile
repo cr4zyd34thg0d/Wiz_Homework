@@ -32,14 +32,14 @@ COPY . .
 # 📋 REQUIREMENT VALIDATION: wizexercise.txt file
 # The Wiz exercise requires a file named "wizexercise.txt" containing the candidate's name
 # This build-time validation ensures the requirement is met before container deployment
-RUN echo "🔍 Validating required wizexercise.txt file..." && \
+RUN echo "Validating required wizexercise.txt file..." && \
     test -f wizexercise.txt && \
-    echo "✅ wizexercise.txt file exists" && \
-    echo "📄 File contents:" && \
+    echo "wizexercise.txt file exists" && \
+    echo "File contents:" && \
     cat wizexercise.txt && \
     test "$(cat wizexercise.txt)" = "Devon Diffie" && \
-    echo "✅ wizexercise.txt content validation passed" && \
-    echo "🎯 File will be accessible at /app/wizexercise.txt in running container"
+    echo "wizexercise.txt content validation passed" && \
+    echo "File will be accessible at /app/wizexercise.txt in running container"
 
 # Expose port
 EXPOSE 3000
