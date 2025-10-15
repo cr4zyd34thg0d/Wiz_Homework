@@ -33,15 +33,13 @@ temp/
 # AWS CLI files (don't upload)
 aws/
 
-# Interview preparation files (internal use only - keep private)
-INTERVIEW_GUIDE.md
-INTERVIEW_EXPLANATION.md
-POST_DEPLOYMENT_CHECKS.md
-DEPLOYMENT_CHECKLIST.md
-FINAL_PACKAGE_SUMMARY.md
-INTERVIEW_EXPLANATION.md
-cleanup-repo.sh
-verify-package.sh
+# Development and testing files
+debug-*.sh
+cleanup-*.sh
+*-temp.md
+
+# Interview preparation materials (private)
+.interview-prep/
 
 # Any accidentally created command files
 *subnet*
