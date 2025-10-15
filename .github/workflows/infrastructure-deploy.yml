@@ -119,6 +119,7 @@ jobs:
         run: |
           echo "🚀 Applying Terraform infrastructure..."
           terraform apply -auto-approve tfplan
+        continue-on-error: false
       
       - name: Get Infrastructure Outputs
         id: tf-outputs
@@ -137,6 +138,15 @@ jobs:
           echo "  MongoDB IP: $MONGO_IP"
           echo "  EKS Cluster: $CLUSTER_NAME"
           echo "  Backup Bucket: $BACKUP_BUCKET"
+      
+      - name: Rollback on Failure
+        if: failure()
+        working-directory: terraform
+        run: |
+          echo "❌ Deployment failed! Attempting rollback..."
+          echo "🗑️ Running terraform destroy to clean up partial deployment..."
+          terraform destroy -auto-approve -var="aws_region=$AWS_REGION" || echo "⚠️ Rollback failed - manual cleanup may be required"
+          echo "📧 Check GitHub Actions logs and AWS console for any remaining resources"
       
       - name: Install AWS Load Balancer Controller
         run: |
