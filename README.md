@@ -57,16 +57,6 @@ aws eks update-kubeconfig --region us-east-1 --name wiz-exercise-dev
 - IAM permission boundary to prevent deletion of VPC
 - Security scanning in the CI/CD pipeline
 
-## Testing It
-
-```bash
-# Run the test script to make sure everything works
-./scripts/test-infrastructure.sh
-
-# Show off the security issues
-./scripts/demo-security-controls.sh
-```
-
 ## What's Where
 
 ```
