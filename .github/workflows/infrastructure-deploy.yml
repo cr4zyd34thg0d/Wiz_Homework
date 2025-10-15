@@ -7,10 +7,7 @@ on:
         description: 'Destroy existing resources first (true/false)'
         required: false
         default: 'false'
-  push:
-    branches: [ main ]
-    paths:
-      - 'terraform/**'
+  # Removed automatic triggers - manual only for interview control
 
 permissions:
   id-token: write
@@ -90,8 +87,8 @@ jobs:
           output: tfsec-results.sarif
       
       - name: Upload TfSec results
-        uses: github/codeql-action/upload-sarif@v2
-        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        if: always() && hashFiles('tfsec-results.sarif') != ''
         continue-on-error: true
         with:
           sarif_file: tfsec-results.sarif
