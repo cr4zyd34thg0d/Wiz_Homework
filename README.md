@@ -75,7 +75,6 @@ kubectl get services -n wiz
 # Check that wizexercise.txt is there
 POD_NAME=$(kubectl get pods -n wiz -l app=wiz-todo-app -o jsonpath='{.items[0].metadata.name}')
 kubectl exec -n wiz $POD_NAME -- cat /app/wizexercise.txt
-# Shows: "Devon Diffie"
 
 # Test the app endpoints
 kubectl exec -n wiz $POD_NAME -- wget -qO- http://localhost:3000/health
