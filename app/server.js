@@ -90,10 +90,10 @@ app.get('/api/info', (req, res) => {
     },
     vulnerabilities: [
       'Outdated Node.js version (16.14.0)',
-      'Outdated Alpine Linux (3.15)',
       'Cluster-admin Kubernetes privileges',
       'MongoDB credentials in environment variables',
-      'Public S3 bucket with database backups'
+      'Public S3 bucket with database backups',
+      'Open to the Public SSH port 22'
     ]
   });
 });
@@ -112,7 +112,6 @@ app.get('/', (req, res) => {
     </ul>
     <h2>Security Issues (Intentional):</h2>
     <ul>
-      <li>Outdated Node.js and Alpine Linux versions</li>
       <li>Kubernetes service account with cluster-admin privileges</li>
       <li>MongoDB credentials in environment variables</li>
       <li>Public S3 bucket with database backups</li>
